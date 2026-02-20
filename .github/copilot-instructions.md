@@ -49,9 +49,7 @@ AI_ATS_Backend/
 │   ├── main.py (App entry point)
 │   └── dependencies.py (DI: get_db, get_current_user)
 ├── migrations/ (Alembic)
-├── requirements/
-│   ├── base.txt
-│   └── dev.txt
+├── requirements.txt
 └── README.md
 ```
 ````
@@ -85,6 +83,21 @@ AI_ATS_Backend/
 - Standardize envelope responses for metadata where needed (e.g., pagination: `items`, `total`, `page`, `size`).
 - Keep response payloads stable and minimal; avoid leaking internal fields (password hashes, internal IDs not meant for clients, audit fields unless required).
 - Services may return domain data, but API endpoints are responsible for returning final Pydantic response DTOs.
+
+### 2.2 Standardized Error Handling
+- All custom exceptions must inherit from a `BaseAppException`.
+- Use a global FastAPI exception handler to return a standardized JSON structure: `{"error": "ErrorCode", "message": "User-friendly message", "details": {}}`.
+- Never leak raw stack traces or database errors (e.g., integrity errors) to the client.
+
+### 2.3 Documentation Metadata
+- Every endpoint must include a `summary` and `description` in the FastAPI decorator.
+- Use `tags` to group endpoints logically (e.g., `tags=["Candidates"]`) for a clean Swagger UI.
+- Use Pydantic `Field` with `examples` and `description` to document schema attributes.
+
+### 2.4 Alembic Migration Workflow
+- **Strict Rule:** Never use `SQLModel.metadata.create_all()`.
+- All database schema changes must be performed via Alembic migrations.
+- Migration scripts must be descriptive and checked for accuracy before being committed (e.g., `alembic revision --autogenerate -m "add_vector_column_to_candidate"`).
 
 ### 3. Parallel Processing (Performance)
 
