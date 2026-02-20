@@ -1,5 +1,5 @@
-from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from app.core.database import Base
+# from fastapi_users.db import SQLAlchemyBaseUserTableUUID
+from fastapi_users_db_sqlmodel import SQLModelBaseUserDB
 
-class User(SQLAlchemyBaseUserTableUUID, Base):
+class User(SQLModelBaseUserDB, table=True):
     pass
