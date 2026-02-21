@@ -17,6 +17,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 app.include_router(auth.auth)
 app.include_router(user.user)
+# app.include_router(job.job)
 
 @app.on_event("startup")
 async def on_startup():
