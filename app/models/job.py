@@ -26,8 +26,8 @@ class Job(SQLModel, table=True):
     requirements: list[str] = Field(default_factory=list, sa_column=Column(sa.JSON, nullable=False))
     
     # TODO: remove the None in the future this will be required
-    description_embedding: list[float] | None = Field(sa_column=Column(Vector(3072)))
-    requirements_embedding: list[float] | None = Field(sa_column=Column(Vector(3072)))
-    responsibilities_embedding: list[float] | None = Field(sa_column=Column(Vector(3072)))
+    description_embedding: list[float] | None = Field(sa_column=Column(Vector(768)))
+    requirements_embedding: list[float] | None = Field(sa_column=Column(Vector(768)))
+    responsibilities_embedding: list[float] | None = Field(sa_column=Column(Vector(768)))
     
     deadline: datetime.datetime

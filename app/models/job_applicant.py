@@ -49,4 +49,4 @@ class JobApplicant(SQLModel, table=True):
     
     failed_reason: str | None = Field(default=None)
     extracted_data: dict | None = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
-    embedded_value: list[float] | None = Field(sa_column=Column(Vector(3072)))
+    embedded_value: list[float] | None = Field(sa_column=Column(Vector(768)), default=None)
