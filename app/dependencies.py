@@ -5,7 +5,6 @@ from app.core.security import auth_backend
 from app.models.user import User
 from fastapi_users import FastAPIUsers
     
-    
 # Initialize FastAPIUsers with your Manager and Auth Backend
 fastapi_users = FastAPIUsers[User, uuid.UUID](
     get_user_manager,
