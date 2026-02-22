@@ -1,12 +1,12 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI ATS Backend"
     # This will look for a variable named DB_URL in your .env file
-    DB_URL: str = "postgresql+asyncpg://postgres:243313@localhost:5432/AI_ATS"
-    SECRET_KEY: str  = "changeme"  # TODO: Override via .env in production
+    DB_URL: str
+    SECRET_KEY: str
+    GEMINI_API_KEY: str
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-settings = Settings()
+settings = Settings() # type: ignore
