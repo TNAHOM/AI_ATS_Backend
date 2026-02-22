@@ -1,8 +1,11 @@
+import datetime
 import enum
 import uuid
 from pgvector.sqlalchemy import Vector
 from sqlmodel import Column, Field, SQLModel
 import sqlalchemy as sa
+
+from app.models.common import ProcessingStatus
 
 
 class ProgressStatus(str, enum.Enum):
@@ -50,4 +53,10 @@ class JobApplicant(SQLModel, table=True):
     failed_reason: str | None = Field(default=None)
     extracted_data: dict | None = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
     embedded_value: list[float] | None = Field(sa_column=Column(Vector(768)), default=None)
+    
+    applied_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
+    
+    # For logging and debugging
+    processing_status: ProcessingStatus = Field(default=ProcessingStatus.PENDING)
+    processing_error: str | None = Field(default=None)
     

@@ -6,6 +6,8 @@ import sqlalchemy as sa
 from sqlmodel import Field, SQLModel, Column
 from pgvector.sqlalchemy import Vector
 
+from app.models.common import ProcessingStatus
+
 class LocationType(str, enum.Enum):
     REMOTE = "remote"
     ONSITE = "onsite"
@@ -31,3 +33,9 @@ class Job(SQLModel, table=True):
     responsibilities_embedding: list[float] | None = Field(sa_column=Column(Vector(768)))
     
     deadline: datetime.datetime
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)
+    updated_at: datetime.datetime = Field(default_factory=datetime.datetime.now, sa_column=Column(sa.DateTime, onupdate=datetime.datetime.now))
+    
+    # For logging and debugging
+    processing_status: ProcessingStatus = Field(default=ProcessingStatus.PENDING)
+    processing_error: str | None = Field(default=None)
