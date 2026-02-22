@@ -16,3 +16,7 @@ class AIRateLimitError(AIServiceError):
 class AISafetyBlockedError(AIServiceError):
     """Raised when content is blocked by safety filters."""
     pass
+
+class S3ServiceError(Exception):
+    """Base exception for S3 storage errors"""
+    pass
