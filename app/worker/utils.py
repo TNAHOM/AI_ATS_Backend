@@ -5,11 +5,13 @@ from typing import Type, Any
 from sqlmodel import select
 from app.core.database import async_session_maker
 from app.models.common import ProcessingStatus
+from typing import AsyncGenerator, Tuple, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
-async def task_monitor(model_class: Type[Any], entity_id: Any):
+async def task_monitor(model_class: Type[Any], entity_id: Any) -> AsyncGenerator[Tuple[Optional[Any], Optional[AsyncSession]], None]:
     """
     A context manager that:
     1. Opens a DB session.
@@ -39,9 +41,7 @@ async def task_monitor(model_class: Type[Any], entity_id: Any):
             # 3. YIELD control back to the specific worker function
             yield entity, session
             
-            # 4. Success Case
-            # We refresh to make sure we don't overwrite any changes made inside the worker
-            await session.refresh(entity) 
+            # await session.refresh(entity) 
             entity.processing_status = ProcessingStatus.COMPLETED
             session.add(entity)
             await session.commit()
@@ -49,12 +49,13 @@ async def task_monitor(model_class: Type[Any], entity_id: Any):
 
         except Exception as e:
             # 5. Failure Case
-            error_msg = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"Task for {model_class.__name__} {entity_id} failed: {error_msg}")
-            logger.error(traceback.format_exc())
-            
-            # Save error to DB so frontend can see it
+            # Here we DO refresh or rollback to ensure we have a clean state to write the error
+            await session.rollback() 
+            # Re-fetch is safer after rollback to attach to current session
             entity.processing_status = ProcessingStatus.FAILED
-            entity.processing_error = error_msg
+            entity.processing_error = f"{type(e).__name__}: {str(e)}"
             session.add(entity)
             await session.commit()
+            
+            logger.error(f"Task failed: {str(e)}")
+            logger.error(traceback.format_exc())

@@ -16,9 +16,17 @@ async def generate_job_embeddings(job_id: uuid.UUID):
     
     # CRITICAL: Open a NEW session for the background task
     async with task_monitor(Job, job_id) as (job, session):
-        if not job:
+        if not job or not session:
+            logger.warning(f"Job {job_id} not found or session invalid.")
             return
         # 1. Generate Embeddings
-        job.description_embedding = await ai_service.get_embedding(job.description)
-        job.requirements_embedding = await ai_service.get_embedding("\n".join(job.requirements))
-        job.responsibilities_embedding = await ai_service.get_embedding("\n".join(job.responsibilities))
+        desc_emb = await ai_service.get_embedding(job.description)
+        req_emb = await ai_service.get_embedding("\n".join(job.requirements))
+        resp_emb = await ai_service.get_embedding("\n".join(job.responsibilities))
+
+        # 2. Assign to Job
+        job.description_embedding = desc_emb
+        job.requirements_embedding = req_emb
+        job.responsibilities_embedding = resp_emb
+        
+        session.add(job)
