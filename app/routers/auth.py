@@ -3,7 +3,7 @@ from app.models.user import User
 from app.core.security import auth_backend
 from app.schemas.common import MessageData, ResponseEnvelope
 from app.schemas.user import UserRead, UserCreate
-from app.dependencies import fastapi_users
+from app.dependencies import fastapi_users, current_active_user
 
 from fastapi import APIRouter
 
@@ -41,9 +41,6 @@ auth.include_router(
     prefix="/auth",
     tags=["auth"],
 )
-
-# Protecting a route with the current active user dependency
-current_active_user = fastapi_users.current_user(active=True)
 
 @auth.get(
     "/authenticated-route",
