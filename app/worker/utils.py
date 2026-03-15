@@ -3,6 +3,7 @@ import traceback
 from contextlib import asynccontextmanager
 from typing import Type, Any
 from sqlmodel import select
+from sqlalchemy.exc import SQLAlchemyError
 from app.core.database import async_session_maker
 from app.models.common import ProcessingStatus
 from typing import AsyncGenerator, Tuple, Optional
@@ -47,7 +48,7 @@ async def task_monitor(model_class: Type[Any], entity_id: Any) -> AsyncGenerator
             await session.commit()
             logger.info(f"Task for {model_class.__name__} {entity_id} completed successfully.")
 
-        except Exception as e:
+        except (SQLAlchemyError, ValueError, TypeError, AttributeError, RuntimeError, KeyError) as e:
             # 5. Failure Case
             # Here we DO refresh or rollback to ensure we have a clean state to write the error
             await session.rollback() 

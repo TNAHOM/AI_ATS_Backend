@@ -19,9 +19,9 @@ class S3Service:
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
             )
             self.bucket_name = settings.S3_BUCKET_NAME
-        except Exception as e:
+        except (ClientError, BotoCoreError, TypeError, ValueError) as e:
             logger.error(f"Failed to initialize Boto3 client: {e}")
-            raise S3ServiceError("Storage service initialization failed.")
+            raise S3ServiceError("Storage service initialization failed.") from e
 
     async def upload_document(self, file_bytes: bytes, original_filename: str, content_type: str = "application/pdf") -> str:
         """
@@ -52,9 +52,9 @@ class S3Service:
         except (ClientError, BotoCoreError) as e:
             logger.error(f"AWS S3 Upload Error: {str(e)}")
             raise S3ServiceError("Failed to upload document to storage.")
-        except Exception as e:
+        except (TypeError, ValueError, OSError, RuntimeError) as e:
             logger.exception(f"Unexpected error during S3 upload: {str(e)}")
-            raise S3ServiceError("An internal error occurred during upload.")
+            raise S3ServiceError("An internal error occurred during upload.") from e
 
 
 s3_service = S3Service()

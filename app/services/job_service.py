@@ -1,11 +1,12 @@
 import logging
 from uuid import UUID
 from typing import Sequence
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.exceptions import BaseAppException
 from app.models.job import Job
 from app.schemas.job import JobCreate
 logger = logging.getLogger(__name__)
@@ -25,18 +26,34 @@ class JobService:
         except SQLAlchemyError as e:
             await db.rollback()
             logger.error(f"Database error while creating job: {e}")
-            raise HTTPException(
+            raise BaseAppException(
+                error_code="JOB_CREATE_FAILED",
+                message="Failed to create job posting.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create job posting."
             )
 
-    async def get_jobs(self, db: AsyncSession, skip: int = 0, limit: int = 50) -> Sequence[Job]:
+    async def get_jobs(
+        self,
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[Sequence[Job], int]:
         try:
             query = select(Job).offset(skip).limit(limit)
             result = await db.execute(query)
-            return result.scalars().all()
-        except Exception as e:
+            jobs = result.scalars().all()
+
+            count_query = select(func.count()).select_from(Job)
+            count_result = await db.execute(count_query)
+            total = int(count_result.scalar_one())
+
+            return jobs, total
+        except SQLAlchemyError as e:
             logger.error(f"Failed to fetch jobs: {e}")
-            raise HTTPException(status_code=500, detail="Could not retrieve jobs.")
+            raise BaseAppException(
+                error_code="JOB_LIST_FAILED",
+                message="Could not retrieve jobs.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 job_service = JobService()

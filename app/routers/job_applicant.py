@@ -6,6 +6,7 @@ from pydantic import EmailStr
 
 from app.core.database import get_async_session
 from app.models.job_applicant import SeniorityStatus
+from app.schemas.common import ResponseEnvelope
 from app.schemas.job_applicant import JobApplicantCreate, JobApplicantResponse
 from app.services.job_applicant_service import job_applicant_service
 from app.worker.process_job_applicant import process_job_applicant
@@ -19,7 +20,7 @@ router = APIRouter(
 
 @router.post(
     "/",
-    response_model=JobApplicantResponse,
+    response_model=ResponseEnvelope[JobApplicantResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a new job applicant",
     description="Create a new job applicant by uploading a resume PDF with applicant information.",
@@ -53,4 +54,8 @@ async def create_job_applicant(
     )
 
     background_tasks.add_task(process_job_applicant, job_applicant_id=new_job_applicant.id, resume_bytes=resume_bytes)
-    return JobApplicantResponse.model_validate(new_job_applicant)
+    return ResponseEnvelope[JobApplicantResponse](
+        success=True,
+        message="Job applicant created successfully.",
+        data=JobApplicantResponse.model_validate(new_job_applicant),
+    )

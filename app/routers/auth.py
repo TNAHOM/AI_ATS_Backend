@@ -1,6 +1,7 @@
 from fastapi import Depends
 from app.models.user import User
 from app.core.security import auth_backend
+from app.schemas.common import MessageData, ResponseEnvelope
 from app.schemas.user import UserRead, UserCreate
 from app.dependencies import fastapi_users
 
@@ -44,6 +45,15 @@ auth.include_router(
 # Protecting a route with the current active user dependency
 current_active_user = fastapi_users.current_user(active=True)
 
-@auth.get("/authenticated-route")
-async def authenticated_route(user: User = Depends(current_active_user)):
-    return {"message": f"Hello {user.email}!"}
+@auth.get(
+    "/authenticated-route",
+    response_model=ResponseEnvelope[MessageData],
+    summary="Get authenticated greeting",
+    description="Returns a standardized greeting envelope for an authenticated user.",
+)
+async def authenticated_route(user: User = Depends(current_active_user)) -> ResponseEnvelope[MessageData]:
+    return ResponseEnvelope[MessageData](
+        success=True,
+        message="Authenticated user fetched successfully.",
+        data=MessageData(message=f"Hello {user.email}!"),
+    )

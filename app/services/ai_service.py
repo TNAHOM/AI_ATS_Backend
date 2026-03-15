@@ -78,7 +78,7 @@ class GeminiService:
             self._handle_api_error(api_err)
             raise
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.exception("Unexpected error in embedding generation.")
             raise AIServiceError("Failed to generate embedding.") from e
 
@@ -141,7 +141,7 @@ class GeminiService:
         except AISafetyBlockedError:
             raise
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.exception("Unexpected error in resume extraction.")
             raise AIServiceError("Resume extraction failed.") from e
     
@@ -192,7 +192,7 @@ class GeminiService:
         except AISafetyBlockedError:
             raise
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.exception("Unexpected error in resume grading.")
             raise AIServiceError("Resume grading failed.") from e
 
@@ -257,7 +257,7 @@ class GeminiService:
         except AISafetyBlockedError:
             raise
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.exception("Unexpected error in resume-vs-job analysis.")
             raise AIServiceError("Resume-vs-job analysis failed.") from e
 

@@ -3,8 +3,10 @@ import math
 import uuid
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
+from app.core.exceptions import AIServiceError
 from app.models.job import Job
 from app.models.job_applicant import ApplicationStatus, JobApplicant
 from app.services.ai_service import ai_service
@@ -48,7 +50,7 @@ def _to_json_compatible(value: Any) -> Any:
     if callable(item_method):
         try:
             return item_method()
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             return str(value)
 
     return str(value)
@@ -145,7 +147,7 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             session.add(job_applicant)
             await session.commit()
 
-        except Exception:
+        except (SQLAlchemyError, AIServiceError, ValueError, TypeError, AttributeError, RuntimeError):
             await session.rollback()
             job_applicant.application_status = ApplicationStatus.FAILED
             session.add(job_applicant)
