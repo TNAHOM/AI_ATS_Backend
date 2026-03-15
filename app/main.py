@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import json
+from json import JSONDecodeError
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +25,90 @@ app.include_router(auth.auth)
 app.include_router(user.user)
 app.include_router(job.router)
 app.include_router(job_applicant.router)
+
+
+def _is_standard_envelope(payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+
+    required_keys = {"success", "message", "data", "error", "details"}
+    return required_keys.issubset(set(payload.keys()))
+
+
+@app.middleware("http")
+async def wrap_auth_user_route_responses(request: Request, call_next):
+    response = await call_next(request)
+
+    route_path = request.url.path
+    if not (route_path.startswith("/auth") or route_path.startswith("/users")):
+        return response
+
+    if response.status_code == 204:
+        return response
+
+    content_type = response.headers.get("content-type", "")
+    if "application/json" not in content_type.lower():
+        return response
+
+    response_body = getattr(response, "body", None)
+    if response_body is None:
+        return response
+
+    if not response_body:
+        payload: object = {}
+    else:
+        try:
+            payload = json.loads(response_body)
+        except JSONDecodeError:
+            return response
+
+    if _is_standard_envelope(payload):
+        return response
+
+    status_code = response.status_code
+    is_success = 200 <= status_code < 300
+
+    message = "Request completed successfully." if is_success else "Request failed."
+    error_code: str | None = None
+    details: dict[str, object] = {}
+    data: object | None = payload if is_success else None
+
+    if isinstance(payload, dict):
+        detail_field = payload.get("detail")
+        if isinstance(detail_field, str):
+            message = detail_field
+        elif isinstance(detail_field, list):
+            message = "Request failed."
+            details = {"detail": detail_field}
+
+        if not is_success:
+            details = payload
+            error_code = "HTTP_ERROR"
+    elif isinstance(payload, list):
+        if is_success:
+            data = payload
+            message = "Request completed successfully."
+        else:
+            details = {"detail": payload}
+            error_code = "HTTP_ERROR"
+
+    response_headers = {
+        header_name: header_value
+        for header_name, header_value in response.headers.items()
+        if header_name.lower() != "content-length"
+    }
+
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "success": is_success,
+            "message": message,
+            "data": data,
+            "error": error_code,
+            "details": details,
+        },
+        headers=response_headers,
+    )
 
 # Converts custom, application-specific business logic errors (defined by the developer) into the API's standardized JSON error format. 
 @app.exception_handler(BaseAppException)
