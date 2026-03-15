@@ -18,8 +18,8 @@
 ## Features
 
 - [ ] Implement and test the strict 20/30/50 grading rubric in AI scoring to align with ATS requirements.
-- [ ] Run resume grading and embedding in parallel in worker flow (`asyncio.gather`) to reduce processing latency.
-- [ ] Add a dedicated vector search endpoint/service for ranking applicants by cosine similarity.
+- [x] Run resume grading and embedding in parallel in worker flow (`asyncio.gather`) to reduce processing latency.
+- [x] Add a dedicated vector search endpoint/service for ranking applicants by cosine similarity.
 - [ ] Add pagination/filter/sort on applicant listing endpoints for recruiter usability at scale.
 - [ ] Add update endpoints for applicants and normalize TODOs in applicant schema/flow.
 - [ ] Add job-applicant processing retries with max-attempt policy and dead-letter handling.

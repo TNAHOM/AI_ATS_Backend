@@ -1,14 +1,19 @@
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import EmailStr
 
 from app.core.database import get_async_session
 from app.models.job_applicant import SeniorityStatus
 from app.schemas.common import ResponseEnvelope
-from app.schemas.job_applicant import JobApplicantCreate, JobApplicantResponse
+from app.schemas.job_applicant import (
+    JobApplicantCreate,
+    JobApplicantResponse,
+    JobApplicantVectorSearchData,
+)
 from app.services.job_applicant_service import job_applicant_service
+from app.services.vector_service import vector_search_service
 from app.worker.process_job_applicant import process_job_applicant
 
 
@@ -58,4 +63,32 @@ async def create_job_applicant(
         success=True,
         message="Job applicant created successfully.",
         data=JobApplicantResponse.model_validate(new_job_applicant),
+    )
+
+
+@router.get(
+    "/vector-search/{job_post_id}",
+    response_model=ResponseEnvelope[JobApplicantVectorSearchData],
+    summary="Rank applicants by vector similarity",
+    description="Returns top applicants for a job ranked by weighted cosine similarity.",
+)
+async def rank_applicants_by_vector_similarity(
+    job_post_id: UUID,
+    top_k: int = Query(default=10, ge=1, le=100),
+    session: AsyncSession = Depends(get_async_session),
+):
+    ranked_applicants = await vector_search_service.rank_applicants_for_job(
+        db=session,
+        job_post_id=job_post_id,
+        top_k=top_k,
+    )
+
+    return ResponseEnvelope[JobApplicantVectorSearchData](
+        success=True,
+        message="Applicants ranked successfully.",
+        data=JobApplicantVectorSearchData(
+            job_post_id=job_post_id,
+            total_candidates=len(ranked_applicants),
+            ranked_applicants=ranked_applicants,
+        ),
     )

@@ -65,3 +65,18 @@ class JobApplicantResponse(BaseModel):
     
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
+
+
+class JobApplicantVectorResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    applicant: JobApplicantResponse
+    similarity_score: float
+
+
+class JobApplicantVectorSearchData(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_post_id: UUID
+    total_candidates: int
+    ranked_applicants: List[JobApplicantVectorResult]

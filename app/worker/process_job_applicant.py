@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 import uuid
@@ -86,7 +87,15 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             extracted_resume = await ai_service.extract_resume_info(resume_bytes)
             normalized_resume_json = extracted_resume.model_dump_json()
 
-            resume_embedding = await ai_service.get_embedding(normalized_resume_json)
+            resume_embedding, ai_analysis = await asyncio.gather(
+                ai_service.get_embedding(normalized_resume_json),
+                ai_service.analyze_resume_against_job_post(
+                    normalized_resume_json=normalized_resume_json,
+                    job_description=job.description,
+                    job_requirements=job.requirements,
+                    job_responsibilities=job.responsibilities,
+                ),
+            )
 
             description_embedding = job.description_embedding
             requirements_embedding = job.requirements_embedding
@@ -104,13 +113,6 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             desc_similarity = _safe_cosine_similarity(resume_embedding, description_embedding)
             req_similarity = _safe_cosine_similarity(resume_embedding, requirements_embedding)
             resp_similarity = _safe_cosine_similarity(resume_embedding, responsibilities_embedding)
-
-            ai_analysis = await ai_service.analyze_resume_against_job_post(
-                normalized_resume_json=normalized_resume_json,
-                job_description=job.description,
-                job_requirements=job.requirements,
-                job_responsibilities=job.responsibilities,
-            )
 
             ai_score_normalized = max(0.0, min(1.0, ai_analysis.score / 100.0))
             penalty_points = min(len(ai_analysis.weaknesses) * 2, 10.0)
