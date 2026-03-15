@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import create_db_and_tables, get_async_session
-from app.routers import auth, user, job
+from app.routers import auth, user, job, job_applicant
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,6 +18,7 @@ app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 app.include_router(auth.auth)
 app.include_router(user.user)
 app.include_router(job.router)
+app.include_router(job_applicant.router)
 
 @app.on_event("startup")
 async def on_startup():

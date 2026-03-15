@@ -18,16 +18,17 @@ class ApplicantAnalysis(BaseModel):
 
 
 class JobApplicantCreate(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="forbid", str_strip_whitespace=True)
 
     job_post_id: UUID
     name: str
     email: EmailStr
     phone_number: str
-    original_filename: str
     seniority_level: Optional[SeniorityStatus] = None
 
 
+
+#TODO: NEED to fx this issue when i implement the update endpoint for job applicant.
 class JobApplicantUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,7 +56,7 @@ class JobApplicantResponse(BaseModel):
     name: str
     email: EmailStr
     phone_number: str
-    original_filename: str
+    original_filename: Optional[str] = None
     s3_path: Optional[str] = None
     
     progress_status: ProgressStatus

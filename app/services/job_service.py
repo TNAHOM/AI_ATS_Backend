@@ -32,7 +32,6 @@ class JobService:
 
     async def get_jobs(self, db: AsyncSession, skip: int = 0, limit: int = 50) -> Sequence[Job]:
         try:
-            # SQLAlchemy 2.0 Async Syntax
             query = select(Job).offset(skip).limit(limit)
             result = await db.execute(query)
             return result.scalars().all()

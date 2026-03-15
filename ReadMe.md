@@ -1,0 +1,1 @@
+- [ ] Improve the analysis to strongly compare the job with the resume test it rigurously, their is an issue currently.
