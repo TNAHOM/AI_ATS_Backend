@@ -66,11 +66,8 @@ class S3Service:
             )
             logger.info(f"Successfully deleted {object_key} from S3.")
         except (ClientError, BotoCoreError) as e:
-            logger.error(f"AWS S3 Delete Error: {str(e)}")
+            logger.error(f"AWS S3 Delete Error for key {object_key}: {str(e)}")
             raise S3ServiceError("Failed to delete document from storage.")
-        except (TypeError, ValueError, OSError, RuntimeError) as e:
-            logger.exception(f"Unexpected error during S3 delete: {str(e)}")
-            raise S3ServiceError("An internal error occurred during delete.") from e
 
 
 s3_service = S3Service()
