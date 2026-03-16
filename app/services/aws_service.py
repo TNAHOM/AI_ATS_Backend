@@ -56,5 +56,25 @@ class S3Service:
             logger.exception(f"Unexpected error during S3 upload: {str(e)}")
             raise S3ServiceError("An internal error occurred during upload.") from e
 
+    async def download_document(self, s3_key: str) -> bytes:
+        """
+        Downloads a file from S3 by its object key and returns the raw bytes.
+        """
+        output_buffer = io.BytesIO()
+        try:
+            await asyncio.to_thread(
+                self.s3_client.download_fileobj,
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Fileobj=output_buffer,
+            )
+            return output_buffer.getvalue()
+        except (ClientError, BotoCoreError) as e:
+            logger.error(f"AWS S3 Download Error for key '{s3_key}': {str(e)}")
+            raise S3ServiceError("Failed to download document from storage.")
+        except (TypeError, ValueError, OSError, RuntimeError) as e:
+            logger.exception(f"Unexpected error during S3 download for key '{s3_key}': {str(e)}")
+            raise S3ServiceError("An internal error occurred during download.") from e
+
 
 s3_service = S3Service()

@@ -1,8 +1,10 @@
 import logging
+import uuid
 
 from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.core.exceptions import BaseAppException, S3ServiceError
 from app.models.job_applicant import ApplicationStatus, JobApplicant
@@ -69,6 +71,94 @@ class JobApplicantService:
                 message="Failed to create job applicant.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    async def get_applicant_for_retry(
+        self,
+        db: AsyncSession,
+        applicant_id: uuid.UUID,
+    ) -> tuple[JobApplicant, bytes]:
+        """
+        Fetch a job applicant that is in FAILED or DEAD_LETTER state and
+        download its resume bytes from S3 so the caller can re-trigger processing.
+
+        Raises ``BaseAppException`` with appropriate error codes on failure.
+        """
+        try:
+            result = await db.execute(
+                select(JobApplicant).where(JobApplicant.id == applicant_id)
+            )
+            job_applicant = result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error("Database error fetching applicant %s for retry: %s", applicant_id, e)
+            raise BaseAppException(
+                error_code="APPLICANT_FETCH_FAILED",
+                message="Failed to retrieve job applicant.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if not job_applicant:
+            raise BaseAppException(
+                error_code="APPLICANT_NOT_FOUND",
+                message="Job applicant not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        retryable_statuses = {ApplicationStatus.FAILED, ApplicationStatus.DEAD_LETTER}
+        if job_applicant.application_status not in retryable_statuses:
+            raise BaseAppException(
+                error_code="APPLICANT_NOT_RETRYABLE",
+                message=(
+                    f"Job applicant cannot be retried in its current state: "
+                    f"{job_applicant.application_status.value}."
+                ),
+                status_code=status.HTTP_409_CONFLICT,
+                details={"current_status": job_applicant.application_status.value},
+            )
+
+        if not job_applicant.s3_path:
+            raise BaseAppException(
+                error_code="RESUME_NOT_FOUND",
+                message="No resume on record for this applicant; cannot retry.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        try:
+            resume_bytes = await s3_service.download_document(job_applicant.s3_path)
+        except S3ServiceError as e:
+            logger.error(
+                "S3 download failed for applicant %s (key: %s): %s",
+                applicant_id,
+                job_applicant.s3_path,
+                e,
+            )
+            raise BaseAppException(
+                error_code="RESUME_DOWNLOAD_FAILED",
+                message="Failed to download resume from storage.",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # Reset retry counter and status so the worker starts fresh.
+        try:
+            job_applicant.retry_count = 0
+            job_applicant.application_status = ApplicationStatus.QUEUED
+            job_applicant.failed_reason = None
+            db.add(job_applicant)
+            await db.commit()
+            await db.refresh(job_applicant)
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error("Database error resetting applicant %s for retry: %s", applicant_id, e)
+            raise BaseAppException(
+                error_code="APPLICANT_RETRY_RESET_FAILED",
+                message="Failed to reset applicant state for retry.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "Applicant %s reset to QUEUED for retry (retry_count=0).",
+            applicant_id,
+        )
+        return job_applicant, resume_bytes
 
 
 job_applicant_service = JobApplicantService()

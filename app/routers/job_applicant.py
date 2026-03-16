@@ -66,6 +66,39 @@ async def create_job_applicant(
     )
 
 
+@router.post(
+    "/{applicant_id}/retry",
+    response_model=ResponseEnvelope[JobApplicantResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry a failed or dead-letter job applicant",
+    description=(
+        "Re-triggers background processing for a job applicant whose status is "
+        "FAILED or DEAD_LETTER.  The retry counter is reset to zero before the "
+        "task is re-queued, giving the applicant a full set of fresh attempts.  "
+        "Returns 409 if the applicant is not in a retryable state."
+    ),
+)
+async def retry_job_applicant(
+    applicant_id: UUID,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_async_session),
+) -> ResponseEnvelope[JobApplicantResponse]:
+    applicant, resume_bytes = await job_applicant_service.get_applicant_for_retry(
+        db=session,
+        applicant_id=applicant_id,
+    )
+    background_tasks.add_task(
+        process_job_applicant,
+        job_applicant_id=applicant.id,
+        resume_bytes=resume_bytes,
+    )
+    return ResponseEnvelope[JobApplicantResponse](
+        success=True,
+        message="Job applicant processing has been re-queued.",
+        data=JobApplicantResponse.model_validate(applicant),
+    )
+
+
 @router.get(
     "/vector-search/{job_post_id}",
     response_model=ResponseEnvelope[JobApplicantVectorSearchData],

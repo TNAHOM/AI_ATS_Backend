@@ -52,19 +52,20 @@ class JobApplicantResponse(BaseModel):
 
     id: UUID
     job_post_id: UUID
-    
+
     name: str
     email: EmailStr
     phone_number: str
     original_filename: Optional[str] = None
     s3_path: Optional[str] = None
-    
+
     progress_status: ProgressStatus
     seniority_level: Optional[SeniorityStatus] = None
     application_status: ApplicationStatus
-    
+
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
+    retry_count: int = 0
 
 
 class JobApplicantVectorResult(BaseModel):
