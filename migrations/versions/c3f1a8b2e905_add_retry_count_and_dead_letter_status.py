@@ -1,7 +1,7 @@
 """Add retry_count column and DEAD_LETTER application status
 
 Revision ID: c3f1a8b2e905
-Revises: 1ea7e0c05932
+Revises: b3f29a1d8e05
 Create Date: 2026-03-16 07:50:00.000000
 
 """
