@@ -86,6 +86,21 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             logger.warning("Job Applicant %s not found or session invalid.", job_applicant_id)
             return
 
+        # Idempotency guard: skip the AI pipeline if this applicant was already
+        # processed, is currently being processed by another task instance, or
+        # has reached a terminal dead-letter state (manual retry resets to QUEUED).
+        if job_applicant.application_status in (
+            ApplicationStatus.PROCESSING,
+            ApplicationStatus.COMPLETED,
+            ApplicationStatus.DEAD_LETTER,
+        ):
+            logger.info(
+                "Skipping duplicate processing for Job Applicant %s: current status is %s.",
+                job_applicant_id,
+                job_applicant.application_status,
+            )
+            return
+
         max_retries: int = settings.MAX_JOB_APPLICANT_RETRIES
 
         for attempt in range(max_retries + 1):
