@@ -4,6 +4,7 @@ import uuid
 from pgvector.sqlalchemy import Vector
 from sqlmodel import Column, Field, SQLModel
 import sqlalchemy as sa
+from sqlalchemy import UniqueConstraint
 
 from app.models.common import ProcessingStatus
 
@@ -29,6 +30,10 @@ class ApplicationStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 class JobApplicant(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("job_post_id", "email", name="uq_job_applicant_job_post_email"),
+    )
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     job_post_id: uuid.UUID = Field(foreign_key="job.id")
     

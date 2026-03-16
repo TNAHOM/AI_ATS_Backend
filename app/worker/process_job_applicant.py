@@ -71,6 +71,19 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             logger.warning("Job Applicant %s not found or session invalid.", job_applicant_id)
             return
 
+        # Idempotency guard: skip analysis if the applicant has already been
+        # processed or is currently being processed by another task instance.
+        if job_applicant.application_status in (
+            ApplicationStatus.PROCESSING,
+            ApplicationStatus.COMPLETED,
+        ):
+            logger.info(
+                "Skipping duplicate processing for Job Applicant %s: current status is %s.",
+                job_applicant_id,
+                job_applicant.application_status,
+            )
+            return
+
         try:
             job_applicant.application_status = ApplicationStatus.PROCESSING
             session.add(job_applicant)

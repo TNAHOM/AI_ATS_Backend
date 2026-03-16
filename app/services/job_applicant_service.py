@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import status
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BaseAppException, S3ServiceError
@@ -60,6 +60,26 @@ class JobApplicantService:
                 error_code="RESUME_UPLOAD_FAILED",
                 message="Failed to upload resume to storage.",
                 status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+        except IntegrityError as e:
+            await db.rollback()
+            constraint_name = getattr(getattr(e.orig, "diag", None), "constraint_name", None) or str(e.orig)
+            if "uq_job_applicant_job_post_email" in constraint_name:
+                logger.warning(
+                    "Duplicate application attempt for job_post_id=%s email=%s",
+                    job_applicant_data.job_post_id,
+                    job_applicant_data.email,
+                )
+                raise BaseAppException(
+                    error_code="DUPLICATE_APPLICATION",
+                    message="An application for this job with the same email already exists.",
+                    status_code=status.HTTP_409_CONFLICT,
+                )
+            logger.error("Integrity constraint violation while creating job applicant: %s", type(e).__name__)
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_CREATE_FAILED",
+                message="Failed to create job applicant due to a data constraint violation.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         except SQLAlchemyError as e:
             await db.rollback()
