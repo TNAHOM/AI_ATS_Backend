@@ -38,6 +38,7 @@ class JobApplicantService:
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        s3_path: str | None = None
         try:
             s3_path = await s3_service.upload_document(
                 file_bytes=resume_bytes,
@@ -45,7 +46,12 @@ class JobApplicantService:
                 content_type="application/pdf",
             )
 
-            job_applicant = JobApplicant(**job_applicant_data.model_dump(), s3_path=s3_path, original_filename=resume_filename, application_status=ApplicationStatus.QUEUED)
+            job_applicant = JobApplicant(
+                **job_applicant_data.model_dump(),
+                s3_path=s3_path,
+                original_filename=resume_filename,
+                application_status=ApplicationStatus.QUEUED,
+            )
 
             db.add(job_applicant)
             await db.commit()
@@ -63,6 +69,15 @@ class JobApplicantService:
             )
         except IntegrityError as e:
             await db.rollback()
+            # Best-effort cleanup of uploaded resume on DB integrity errors
+            if s3_path:
+                try:
+                    await s3_service.delete_document(s3_path)
+                except S3ServiceError as cleanup_error:
+                    logger.warning(
+                        "Failed to delete orphaned resume from S3 after IntegrityError: %s",
+                        cleanup_error,
+                    )
             constraint_name = getattr(getattr(e.orig, "diag", None), "constraint_name", None) or str(e.orig)
             if "uq_job_applicant_job_post_email" in constraint_name:
                 logger.warning(
@@ -83,6 +98,15 @@ class JobApplicantService:
             )
         except SQLAlchemyError as e:
             await db.rollback()
+            # Best-effort cleanup of uploaded resume on general DB errors
+            if s3_path:
+                try:
+                    await s3_service.delete_document(s3_path)
+                except S3ServiceError as cleanup_error:
+                    logger.warning(
+                        "Failed to delete orphaned resume from S3 after SQLAlchemyError: %s",
+                        cleanup_error,
+                    )
             logger.error("Database error while creating job applicant: %s", e)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_CREATE_FAILED",
