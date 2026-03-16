@@ -5,12 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import EmailStr
 
 from app.core.database import get_async_session
-from app.models.job_applicant import SeniorityStatus
-from app.schemas.common import ResponseEnvelope
+from app.models.job_applicant import ApplicationStatus, ProgressStatus, SeniorityStatus
+from app.schemas.common import PaginatedPayload, ResponseEnvelope
 from app.schemas.job_applicant import (
     JobApplicantCreate,
     JobApplicantResponse,
+    JobApplicantSortField,
     JobApplicantVectorSearchData,
+    SortOrder,
 )
 from app.services.job_applicant_service import job_applicant_service
 from app.services.vector_service import vector_search_service
@@ -67,6 +69,55 @@ async def create_job_applicant(
 
 
 @router.get(
+    "/",
+    response_model=ResponseEnvelope[PaginatedPayload[JobApplicantResponse]],
+    summary="List job applicants",
+    description=(
+        "Returns a paginated, filtered, and sorted list of job applicants. "
+        "Filter by job posting, progress status, seniority, processing status, and AI score range. "
+        "Sort by application date, name, or AI score in ascending or descending order."
+    ),
+)
+async def list_job_applicants(
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    size: int = Query(default=20, ge=1, le=100, description="Number of items per page"),
+    job_post_id: UUID | None = Query(default=None, description="Filter by job posting ID"),
+    progress_status: ProgressStatus | None = Query(default=None, description="Filter by recruiter progress status"),
+    seniority_level: SeniorityStatus | None = Query(default=None, description="Filter by declared seniority level"),
+    application_status: ApplicationStatus | None = Query(default=None, description="Filter by processing/application status"),
+    min_score: float | None = Query(default=None, ge=0, le=10, description="Minimum AI analysis score (0–10)"),
+    max_score: float | None = Query(default=None, ge=0, le=10, description="Maximum AI analysis score (0–10)"),
+    sort_by: JobApplicantSortField = Query(default=JobApplicantSortField.APPLIED_AT, description="Field to sort by"),
+    sort_order: SortOrder = Query(default=SortOrder.DESC, description="Sort direction"),
+    session: AsyncSession = Depends(get_async_session),
+) -> ResponseEnvelope[PaginatedPayload[JobApplicantResponse]]:
+    applicants, total = await job_applicant_service.list_job_applicants(
+        db=session,
+        page=page,
+        size=size,
+        job_post_id=job_post_id,
+        progress_status=progress_status,
+        seniority_level=seniority_level,
+        application_status=application_status,
+        min_score=min_score,
+        max_score=max_score,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    return ResponseEnvelope[PaginatedPayload[JobApplicantResponse]](
+        success=True,
+        message="Job applicants retrieved successfully.",
+        data=PaginatedPayload[JobApplicantResponse](
+            items=[JobApplicantResponse.model_validate(a) for a in applicants],
+            total=total,
+            page=page,
+            size=size,
+        ),
+    )
+
+
+@router.get(
     "/vector-search/{job_post_id}",
     response_model=ResponseEnvelope[JobApplicantVectorSearchData],
     summary="Rank applicants by vector similarity",
@@ -91,4 +142,22 @@ async def rank_applicants_by_vector_similarity(
             total_candidates=len(ranked_applicants),
             ranked_applicants=ranked_applicants,
         ),
+    )
+
+
+@router.get(
+    "/{applicant_id}",
+    response_model=ResponseEnvelope[JobApplicantResponse],
+    summary="Get a job applicant by ID",
+    description="Returns the full profile of a single job applicant.",
+)
+async def get_job_applicant(
+    applicant_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> ResponseEnvelope[JobApplicantResponse]:
+    applicant = await job_applicant_service.get_job_applicant(db=session, applicant_id=applicant_id)
+    return ResponseEnvelope[JobApplicantResponse](
+        success=True,
+        message="Job applicant retrieved successfully.",
+        data=JobApplicantResponse.model_validate(applicant),
     )

@@ -17,6 +17,15 @@ class ResponseEnvelope(BaseModel, Generic[PayloadT]):
     details: dict[str, Any] = Field(default_factory=dict, description="Optional metadata")
 
 
+class PaginatedPayload(BaseModel, Generic[PayloadT]):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PayloadT] = Field(default_factory=list, description="Page items")
+    total: int = Field(..., ge=0, description="Total number of matching items")
+    page: int = Field(..., ge=1, description="Current page number (1-based)")
+    size: int = Field(..., ge=1, description="Number of items per page")
+
+
 class MessageData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
