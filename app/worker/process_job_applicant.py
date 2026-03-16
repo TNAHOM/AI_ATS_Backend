@@ -164,6 +164,8 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
                     "weakness": analysis_payload["weakness"],
                 }
                 job_applicant.application_status = ApplicationStatus.COMPLETED
+                job_applicant.retry_count = attempt + 1
+                job_applicant.failed_reason = None
                 session.add(job_applicant)
                 await session.commit()
 

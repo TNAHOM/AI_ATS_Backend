@@ -19,9 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # 1. Add DEAD_LETTER to the applicationstatus enum.
-    #    PostgreSQL requires a raw DDL statement for this; it cannot be done
-    #    via the ORM or op.alter_column().
-    op.execute("ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'DEAD_LETTER'")
+    #    PostgreSQL does not allow ALTER TYPE … ADD VALUE inside a transaction
+    #    block, so this statement must be emitted with autocommit.
+    with op.get_context().autocommit_block():
+        op.execute(sa.text("ALTER TYPE applicationstatus ADD VALUE IF NOT EXISTS 'DEAD_LETTER'"))
 
     # 2. Add retry_count column to jobapplicant table.
     op.add_column(

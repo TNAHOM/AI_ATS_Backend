@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.core.exceptions import BaseAppException, S3ServiceError
+from app.models.common import ProcessingStatus
 from app.models.job_applicant import ApplicationStatus, JobApplicant
 from app.schemas.job_applicant import JobApplicantCreate
 from app.services.aws_service import s3_service
@@ -113,6 +114,14 @@ class JobApplicantService:
                 ),
                 status_code=status.HTTP_409_CONFLICT,
                 details={"current_status": job_applicant.application_status.value},
+            )
+
+        if job_applicant.processing_status == ProcessingStatus.PROCESSING:
+            raise BaseAppException(
+                error_code="APPLICANT_ALREADY_PROCESSING",
+                message="Job applicant is currently being processed; retry is not allowed until processing completes.",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"processing_status": job_applicant.processing_status.value},
             )
 
         if not job_applicant.s3_path:
