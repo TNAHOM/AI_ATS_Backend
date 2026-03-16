@@ -138,14 +138,18 @@ class JobApplicantService:
         if max_score is not None:
             conditions.append(score_col <= max_score)
 
-        # Explicit mapping ensures new enum values surface as KeyError instead
-        # of silently falling back to a wrong default.
         sort_col_map = {
             JobApplicantSortField.APPLIED_AT: JobApplicant.applied_at,
             JobApplicantSortField.NAME: JobApplicant.name,
             JobApplicantSortField.SCORE: score_col,
         }
-        raw_sort_col = sort_col_map[sort_by]
+        raw_sort_col = sort_col_map.get(sort_by)
+        if raw_sort_col is None:
+            raise BaseAppException(
+                error_code="INVALID_SORT_FIELD",
+                message=f"Unsupported sort field: {sort_by!r}.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         order_expr = nullslast(desc(raw_sort_col)) if sort_order == SortOrder.DESC else nullslast(asc(raw_sort_col))
 
