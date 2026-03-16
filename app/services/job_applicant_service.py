@@ -1,11 +1,12 @@
 import logging
-from typing import Sequence
+from typing import Any, Sequence
 from uuid import UUID
 
 from fastapi import status
 from sqlalchemy import Float, asc, case, cast, desc, func, nullslast, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import BaseAppException, S3ServiceError
 from app.models.job_applicant import ApplicationStatus, JobApplicant, ProgressStatus, SeniorityStatus
@@ -43,10 +44,11 @@ class JobApplicantService:
 
         # Pre-check: reject duplicate application before touching S3, so we
         # avoid orphaning an upload and get a clean 409 without any DB error.
+        columns = JobApplicant.__table__.c
         existing_result = await db.execute(
             select(JobApplicant).where(
-                JobApplicant.job_post_id == job_applicant_data.job_post_id,
-                JobApplicant.email == job_applicant_data.email.lower(),
+                columns.job_post_id == job_applicant_data.job_post_id,
+                columns.email == job_applicant_data.email.lower(),
             )
         )
         if existing_result.scalar_one_or_none() is not None:
@@ -144,8 +146,9 @@ class JobApplicantService:
 
     async def get_job_applicant(self, db: AsyncSession, applicant_id: UUID) -> JobApplicant:
         """Fetch a single job applicant by ID."""
+        columns = JobApplicant.__table__.c
         try:
-            result = await db.execute(select(JobApplicant).where(JobApplicant.id == applicant_id))
+            result = await db.execute(select(JobApplicant).where(columns.id == applicant_id))
             applicant = result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.error("Database error while fetching applicant %s: %s", applicant_id, e)
@@ -186,30 +189,31 @@ class JobApplicantService:
         Sorting: applied_at | name | score  ×  asc | desc  (nulls always last).
         Pagination: 1-based page + size.
         """
+        columns = JobApplicant.__table__.c
         # Cast analysis.score to Float safely; yields NULL when analysis is NULL
         # or when the key is absent, which integrates correctly with nullslast().
-        score_col = case(
-            (JobApplicant.analysis.isnot(None), cast(JobApplicant.analysis["score"].astext, Float)),
+        score_col: ColumnElement[float | None] = case(
+            (columns.analysis.isnot(None), cast(columns.analysis["score"].astext, Float)),
             else_=None,
         )
 
-        conditions = []
+        conditions: list[ColumnElement[bool]] = []
         if job_post_id is not None:
-            conditions.append(JobApplicant.job_post_id == job_post_id)
+            conditions.append(columns.job_post_id == job_post_id)
         if progress_status is not None:
-            conditions.append(JobApplicant.progress_status == progress_status)
+            conditions.append(columns.progress_status == progress_status)
         if seniority_level is not None:
-            conditions.append(JobApplicant.seniority_level == seniority_level)
+            conditions.append(columns.seniority_level == seniority_level)
         if application_status is not None:
-            conditions.append(JobApplicant.application_status == application_status)
+            conditions.append(columns.application_status == application_status)
         if min_score is not None:
             conditions.append(score_col >= min_score)
         if max_score is not None:
             conditions.append(score_col <= max_score)
 
-        sort_col_map = {
-            JobApplicantSortField.APPLIED_AT: JobApplicant.applied_at,
-            JobApplicantSortField.NAME: JobApplicant.name,
+        sort_col_map: dict[JobApplicantSortField, ColumnElement[Any]] = {
+            JobApplicantSortField.APPLIED_AT: columns.applied_at,
+            JobApplicantSortField.NAME: columns.name,
             JobApplicantSortField.SCORE: score_col,
         }
         raw_sort_col = sort_col_map.get(sort_by)

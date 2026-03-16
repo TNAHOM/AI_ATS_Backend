@@ -56,5 +56,21 @@ class S3Service:
             logger.exception(f"Unexpected error during S3 upload: {str(e)}")
             raise S3ServiceError("An internal error occurred during upload.") from e
 
+    async def delete_document(self, object_key: str) -> None:
+        """Deletes a file from S3 by object key in a non-blocking way."""
+        try:
+            await asyncio.to_thread(
+                self.s3_client.delete_object,
+                Bucket=self.bucket_name,
+                Key=object_key,
+            )
+            logger.info(f"Successfully deleted {object_key} from S3.")
+        except (ClientError, BotoCoreError) as e:
+            logger.error(f"AWS S3 Delete Error: {str(e)}")
+            raise S3ServiceError("Failed to delete document from storage.")
+        except (TypeError, ValueError, OSError, RuntimeError) as e:
+            logger.exception(f"Unexpected error during S3 delete: {str(e)}")
+            raise S3ServiceError("An internal error occurred during delete.") from e
+
 
 s3_service = S3Service()
