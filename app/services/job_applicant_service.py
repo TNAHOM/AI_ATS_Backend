@@ -3,6 +3,7 @@ import logging
 from fastapi import status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.core.exceptions import BaseAppException, S3ServiceError
 from app.models.job_applicant import ApplicationStatus, JobApplicant
@@ -38,6 +39,21 @@ class JobApplicantService:
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Pre-check: reject duplicate application before touching S3, so we
+        # avoid orphaning an upload and get a clean 409 without any DB error.
+        existing_result = await db.execute(
+            select(JobApplicant).where(
+                JobApplicant.job_post_id == job_applicant_data.job_post_id,
+                JobApplicant.email == job_applicant_data.email.lower(),
+            )
+        )
+        if existing_result.scalar_one_or_none() is not None:
+            raise BaseAppException(
+                error_code="DUPLICATE_APPLICATION",
+                message="An application for this job with the same email already exists.",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
         s3_path: str | None = None
         try:
             s3_path = await s3_service.upload_document(
@@ -68,7 +84,10 @@ class JobApplicantService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
             )
         except IntegrityError as e:
-            await db.rollback()
+            try:
+                await db.rollback()
+            except SQLAlchemyError as rollback_error:
+                logger.warning("Rollback failed after IntegrityError: %s", type(rollback_error).__name__)
             # Best-effort cleanup of uploaded resume on DB integrity errors
             if s3_path:
                 try:
@@ -78,8 +97,12 @@ class JobApplicantService:
                         "Failed to delete orphaned resume from S3 after IntegrityError: %s",
                         cleanup_error,
                     )
-            constraint_name = getattr(getattr(e.orig, "diag", None), "constraint_name", None) or str(e.orig)
-            if "uq_job_applicant_job_post_email" in constraint_name:
+            # str(e) (SQLAlchemy exception) always contains the full error text
+            # including the constraint name, unlike str(e.orig) which may be
+            # empty when using the asyncpg driver.
+            constraint = getattr(getattr(e.orig, "diag", None), "constraint_name", None)
+            error_text = constraint if constraint else str(e)
+            if "uq_job_applicant_job_post_email" in error_text:
                 logger.warning(
                     "Duplicate application attempt for job_post_id=%s email=%s",
                     job_applicant_data.job_post_id,
@@ -97,7 +120,10 @@ class JobApplicantService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
         except SQLAlchemyError as e:
-            await db.rollback()
+            try:
+                await db.rollback()
+            except SQLAlchemyError as rollback_error:
+                logger.warning("Rollback failed after SQLAlchemyError: %s", type(rollback_error).__name__)
             # Best-effort cleanup of uploaded resume on general DB errors
             if s3_path:
                 try:
@@ -107,7 +133,7 @@ class JobApplicantService:
                         "Failed to delete orphaned resume from S3 after SQLAlchemyError: %s",
                         cleanup_error,
                     )
-            logger.error("Database error while creating job applicant: %s", e)
+            logger.error("Database error while creating job applicant: %s: %s", type(e).__name__, str(e))
             raise BaseAppException(
                 error_code="JOB_APPLICANT_CREATE_FAILED",
                 message="Failed to create job applicant.",
