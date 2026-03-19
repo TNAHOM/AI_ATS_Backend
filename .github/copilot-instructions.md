@@ -132,3 +132,44 @@ When implementing `services/llm_service.py`, the grading prompt must strictly fo
 ```
 
 ```
+
+## Copilot Coding Agent Task Quality
+
+To improve output quality when using GitHub Copilot coding agent, use these rules for every assigned task:
+
+- Start with well-scoped issues:
+  - clear problem statement
+  - acceptance criteria
+  - expected files or areas to change when known
+- If requirements are ambiguous or missing, ask targeted clarification questions before implementing.
+- Prefer small, focused PRs over broad multi-feature changes.
+- Always preserve existing architecture and naming conventions in this repository.
+
+### Required context-loading order
+
+When starting work, load guidance in this order:
+1. `.github/copilot-instructions.md` (this file)
+2. `.github/instructions/**/*.instructions.md`
+3. `.github/skills/**/SKILL.md`
+4. Relevant source files in `app/` and `migrations/`
+
+If guidance conflicts, prioritize:
+1. Repository instructions (`.github/copilot-instructions.md`)
+2. Path-specific instruction files
+3. Skill guidance
+
+### Clarification protocol
+
+If the answer is not available from:
+- `.github/agents` configuration provided by maintainers,
+- `.github/instructions`,
+- `.github/skills`,
+- or this `copilot-instructions.md`,
+
+then ask concise clarification questions and wait for user confirmation before implementing uncertain behavior.
+
+### Validation expectations
+
+- Validate changed Python files for syntax correctness (`python -m compileall app`).
+- Run repository tests/linters if configured in the environment.
+- If dependencies are missing (for example, `pytest` not installed), report that clearly and continue with available validations.
