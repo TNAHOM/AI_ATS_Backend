@@ -5,7 +5,7 @@ from typing import List
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from app.schemas.AI_schema import ResumeData
 
 from app.core.config import settings
@@ -23,16 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 class ResumeGrade(BaseModel):
-    score: int
+    score: int = Field(ge=0, le=100)
     reasoning: str
-    missing_skills: List[str]
+    missing_skills: List[str] = Field(default_factory=list)
     is_match: bool
 
 
 class ResumeJobAnalysis(BaseModel):
-    strengths: List[str]
-    weaknesses: List[str]
-    score: float
+    strengths: List[str] = Field(default_factory=list)
+    weaknesses: List[str] = Field(default_factory=list)
+    score: float = Field(ge=0, le=100)
 
 
 class GeminiService:
@@ -156,7 +156,23 @@ class GeminiService:
             raise ValueError("Job description cannot be empty.")
 
         prompt = (
-            "Grade the following resume against the job description.\n\n"
+            "You are a senior technical recruiter grading candidate-job fit for a production ATS.\n"
+            "Use a strict weighted rubric and return only JSON.\n\n"
+            "SCORING RUBRIC (TOTAL 100):\n"
+            "1) 20%: Job description summary + expected experience VS candidate summary + work history.\n"
+            "2) 30%: Job responsibilities VS candidate work experience + cover-letter evidence (if cover letter is absent, use work experience only).\n"
+            "3) 50%: Job requirements VS the full resume profile.\n\n"
+            "BENCHMARK BANDS:\n"
+            "- 90-100: Outstanding, interview immediately.\n"
+            "- 75-89: Strong, should be shortlisted.\n"
+            "- 60-74: Borderline, shortlist only if pipeline is thin.\n"
+            "- 40-59: Weak fit, likely reject.\n"
+            "- 0-39: Not a fit.\n\n"
+            "OUTPUT RULES:\n"
+            '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
+            "- reasoning must reference concrete resume-vs-JD evidence.\n"
+            "- missing_skills must contain only critical missing requirements.\n"
+            "- is_match should be true for score >= 75, else false.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Resume:\n{resume_text.strip()}\n\n"
             "Return STRICT valid JSON only."
@@ -213,14 +229,24 @@ class GeminiService:
         responsibilities_text = "\n".join(job_responsibilities)
 
         prompt = (
-            "You are an ATS (Applicant Tracking System) evaluation assistant.\n"
-        "Your task is to analyze how well an applicant’s resume matches a job posting.\n"
-        "The system has already calculated numeric similarity scores.\n"
-        "You DO NOT calculate scores. Instead, you must generate:\n"
-        '- "strengths": reasons why the applicant is a good fit \n'
-        '- "weaknesses": reasons why the applicant may not be a good fit\n\n'
-        '- "score": a numeric score from 1 to 100(float number) indicating overall fit using the job post information and the applicant resume (higher is better)\n\n'
-        "Return STRICT valid JSON only.\n\n"
+            "You are a senior recruiter-style ATS evaluator for a high-bar hiring process.\n"
+            "Assess resume-to-job alignment with reliable, evidence-based grading.\n\n"
+            "Use this weighted framework:\n"
+            "1) 20%: JD summary + expected experience vs candidate summary + work history.\n"
+            "2) 30%: JD responsibilities vs candidate work experience (and cover letter signals if present in resume JSON).\n"
+            "3) 50%: JD requirements vs full resume profile.\n\n"
+            "Benchmark the final score as:\n"
+            "- 90-100: outstanding fit, immediate interview recommendation\n"
+            "- 75-89: strong fit, should be shortlisted\n"
+            "- 60-74: moderate fit, conditional shortlist\n"
+            "- 40-59: weak fit\n"
+            "- 0-39: poor fit\n\n"
+            "OUTPUT CONTRACT:\n"
+            '- "strengths": 2-6 concise evidence-based bullets tied to JD criteria.\n'
+            '- "weaknesses": 0-5 concise gap-based bullets tied to JD criteria.\n'
+            '- "score": numeric float from 0 to 100.\n'
+            "Do not hallucinate unavailable evidence.\n"
+            "Return STRICT valid JSON only.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Job Requirements:\n{requirements_text}\n\n"
             f"Job Responsibilities:\n{responsibilities_text}\n\n"
