@@ -5,7 +5,7 @@ from typing import List
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, conlist
 from app.schemas.AI_schema import ResumeData
 
 from app.core.config import settings
@@ -30,8 +30,8 @@ class ResumeGrade(BaseModel):
 
 
 class ResumeJobAnalysis(BaseModel):
-    strengths: List[str] = Field(default_factory=list, max_length=6)
-    weaknesses: List[str] = Field(default_factory=list, max_length=5)
+    strengths: conlist(str, max_length=6) = Field(default_factory=list)
+    weaknesses: conlist(str, max_length=5) = Field(default_factory=list)
     score: float = Field(ge=0, le=100)
 
 
@@ -171,7 +171,7 @@ class GeminiService:
             "OUTPUT RULES:\n"
             '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
             "- reasoning must reference concrete resume-vs-JD evidence.\n"
-            "- missing_skills must contain only critical missing requirements (hard must-haves, not optional/nice-to-have items).\n"
+            "- missing_skills must contain only critical missing requirements (infer from mandatory wording like must/required or explicit non-optional core skills; exclude preferred/nice-to-have items).\n"
             "- is_match should be true for score >= 75, else false.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Resume:\n{resume_text.strip()}\n\n"
@@ -242,7 +242,7 @@ class GeminiService:
             "- 40-59: weak fit\n"
             "- 0-39: poor fit\n\n"
             "OUTPUT CONTRACT:\n"
-            '- "strengths": 0-6 concise evidence-based bullets tied to JD criteria (target 2-6 when evidence exists).\n'
+            '- "strengths": 0-6 concise evidence-based bullets tied to JD criteria.\n'
             '- "weaknesses": 0-5 concise gap-based bullets tied to JD criteria.\n'
             '- "score": numeric float from 0 to 100.\n'
             "Do not hallucinate unavailable evidence.\n"
