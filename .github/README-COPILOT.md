@@ -7,13 +7,14 @@ This repository is configured for GitHub Copilot coding agent using layered guid
 1. `.github/copilot-instructions.md` (repository-wide baseline)
 2. `.github/instructions/**/*.instructions.md` (path-specific enforcement)
 3. `.github/skills/**/SKILL.md` (specialized implementation workflows)
+4. Assigned custom agent profile context when maintainers provide one for a task
 
 ## Available guidance
 
 - `copilot-instructions.md`: Global backend standards and implementation constraints.
-- `instructions/ats-backend-enforcement.instructions.md`: API envelope, router placement, and exception-handling enforcement for backend files.
-- `skills/ai-ats-backend-implementation/SKILL.md`: ATS backend implementation workflow.
-- `skills/ai-ats-backend-implementation/assets/response-envelope-dto.template.py`: Response envelope DTO template.
+- `.github/instructions/ats-backend-enforcement.instructions.md`: API envelope, router placement, and exception-handling enforcement for backend files.
+- `.github/skills/ai-ats-backend-implementation/SKILL.md`: ATS backend implementation workflow.
+- `.github/skills/ai-ats-backend-implementation/assets/response-envelope-dto.template.py`: Response envelope DTO template.
 
 ## Best-practice task authoring
 

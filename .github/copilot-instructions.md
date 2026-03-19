@@ -149,21 +149,23 @@ To improve output quality when using GitHub Copilot coding agent, use these rule
 
 When starting work, load guidance in this order:
 1. `.github/copilot-instructions.md` (this file)
-2. `.github/instructions/**/*.instructions.md`
+2. `.github/instructions/**/*.instructions.md` (one or more files, as present in the repository; for example, `.github/instructions/ats-backend-enforcement.instructions.md`)
 3. `.github/skills/**/SKILL.md`
 4. Relevant source files in `app/` and `migrations/`
+5. Assigned custom agent profile context (task-specific custom Copilot agent guidance) when explicitly provided by maintainers
 
 If guidance conflicts, prioritize:
 1. Repository instructions (`.github/copilot-instructions.md`)
 2. Path-specific instruction files
 3. Skill guidance
+4. Agent profile guidance for the specific assigned agent
 
 ### Clarification protocol
 
 If the answer is not available from:
-- `.github/agents` configuration provided by maintainers,
-- `.github/instructions`,
-- `.github/skills`,
+- assigned custom agent profile context provided by maintainers,
+- `.github/instructions/**/*.instructions.md`,
+- `.github/skills/**/SKILL.md`,
 - or this `copilot-instructions.md`,
 
 then ask concise clarification questions and wait for user confirmation before implementing uncertain behavior.
