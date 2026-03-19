@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import EmailStr
 
 from app.core.database import get_async_session
+from app.dependencies import current_active_user
 from app.models.job_applicant import ApplicationStatus, ProgressStatus, SeniorityStatus
 from app.schemas.common import PaginatedPayload, ResponseEnvelope
 from app.schemas.job_applicant import (
@@ -71,6 +72,7 @@ async def create_job_applicant(
 @router.get(
     "/",
     response_model=ResponseEnvelope[PaginatedPayload[JobApplicantResponse]],
+    dependencies=[Depends(current_active_user)],
     summary="List job applicants",
     description=(
         "Returns a paginated, filtered, and sorted list of job applicants. "
@@ -148,6 +150,7 @@ async def rank_applicants_by_vector_similarity(
 @router.get(
     "/{applicant_id}",
     response_model=ResponseEnvelope[JobApplicantResponse],
+    dependencies=[Depends(current_active_user)],
     summary="Get a job applicant by ID",
     description="Returns the full profile of a single job applicant.",
 )
