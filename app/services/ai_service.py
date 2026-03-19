@@ -30,8 +30,8 @@ class ResumeGrade(BaseModel):
 
 
 class ResumeJobAnalysis(BaseModel):
-    strengths: List[str] = Field(default_factory=list)
-    weaknesses: List[str] = Field(default_factory=list)
+    strengths: List[str] = Field(default_factory=list, min_length=2, max_length=6)
+    weaknesses: List[str] = Field(default_factory=list, max_length=5)
     score: float = Field(ge=0, le=100)
 
 
@@ -171,7 +171,7 @@ class GeminiService:
             "OUTPUT RULES:\n"
             '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
             "- reasoning must reference concrete resume-vs-JD evidence.\n"
-            "- missing_skills must contain only critical missing requirements.\n"
+            "- missing_skills must contain only critical missing requirements (hard must-haves, not optional/nice-to-have items).\n"
             "- is_match should be true for score >= 75, else false.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Resume:\n{resume_text.strip()}\n\n"
