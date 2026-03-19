@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str
     AWS_REGION: str
     S3_BUCKET_NAME: str
+    MAX_JOB_APPLICANT_RETRIES: int = 3
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

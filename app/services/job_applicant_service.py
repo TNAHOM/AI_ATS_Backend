@@ -1,14 +1,16 @@
 import logging
 from typing import Any, Sequence
 from uuid import UUID
+import uuid
 
 from fastapi import status
-from sqlalchemy import Float, asc, case, cast, desc, func, nullslast, select
+from sqlalchemy import Float, asc, case, cast, desc, func, inspect, nullslast, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import BaseAppException, S3ServiceError
+from app.models.common import ProcessingStatus
 from app.models.job_applicant import ApplicationStatus, JobApplicant, ProgressStatus, SeniorityStatus
 from app.schemas.job_applicant import JobApplicantCreate, JobApplicantSortField, SortOrder
 from app.services.aws_service import s3_service
@@ -44,7 +46,7 @@ class JobApplicantService:
 
         # Pre-check: reject duplicate application before touching S3, so we
         # avoid orphaning an upload and get a clean 409 without any DB error.
-        columns = JobApplicant.__table__.c
+        columns = inspect(JobApplicant).c
         existing_result = await db.execute(
             select(JobApplicant).where(
                 columns.job_post_id == job_applicant_data.job_post_id,
@@ -144,9 +146,106 @@ class JobApplicantService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    async def get_applicant_for_retry(
+        self,
+        db: AsyncSession,
+        applicant_id: uuid.UUID,
+    ) -> tuple[JobApplicant, bytes]:
+        """
+        Fetch a job applicant that is in FAILED or DEAD_LETTER state and
+        download its resume bytes from S3 so the caller can re-trigger processing.
+
+        Raises ``BaseAppException`` with appropriate error codes on failure.
+        """
+        columns = inspect(JobApplicant).c
+        try:
+            result = await db.execute(
+                select(JobApplicant).where(columns.id == applicant_id)
+            )
+            job_applicant = result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error("Database error fetching applicant %s for retry: %s", applicant_id, e)
+            raise BaseAppException(
+                error_code="APPLICANT_FETCH_FAILED",
+                message="Failed to retrieve job applicant.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if not job_applicant:
+            raise BaseAppException(
+                error_code="APPLICANT_NOT_FOUND",
+                message="Job applicant not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        retryable_statuses = {ApplicationStatus.FAILED, ApplicationStatus.DEAD_LETTER}
+        if job_applicant.application_status not in retryable_statuses:
+            raise BaseAppException(
+                error_code="APPLICANT_NOT_RETRYABLE",
+                message=(
+                    f"Job applicant cannot be retried in its current state: "
+                    f"{job_applicant.application_status.value}."
+                ),
+                status_code=status.HTTP_409_CONFLICT,
+                details={"current_status": job_applicant.application_status.value},
+            )
+
+        if job_applicant.processing_status == ProcessingStatus.PROCESSING:
+            raise BaseAppException(
+                error_code="APPLICANT_ALREADY_PROCESSING",
+                message="Job applicant is currently being processed; retry is not allowed until processing completes.",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"processing_status": job_applicant.processing_status.value},
+            )
+
+        if not job_applicant.s3_path:
+            raise BaseAppException(
+                error_code="RESUME_NOT_FOUND",
+                message="No resume on record for this applicant; cannot retry.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        try:
+            resume_bytes = await s3_service.download_document(job_applicant.s3_path)
+        except S3ServiceError as e:
+            logger.error(
+                "S3 download failed for applicant %s (key: %s): %s",
+                applicant_id,
+                job_applicant.s3_path,
+                e,
+            )
+            raise BaseAppException(
+                error_code="RESUME_DOWNLOAD_FAILED",
+                message="Failed to download resume from storage.",
+                status_code=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # Reset retry counter and status so the worker starts fresh.
+        try:
+            job_applicant.retry_count = 0
+            job_applicant.application_status = ApplicationStatus.QUEUED
+            job_applicant.failed_reason = None
+            db.add(job_applicant)
+            await db.commit()
+            await db.refresh(job_applicant)
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error("Database error resetting applicant %s for retry: %s", applicant_id, e)
+            raise BaseAppException(
+                error_code="APPLICANT_RETRY_RESET_FAILED",
+                message="Failed to reset applicant state for retry.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info(
+            "Applicant %s reset to QUEUED for retry (retry_count=0).",
+            applicant_id,
+        )
+        return job_applicant, resume_bytes
+
     async def get_job_applicant(self, db: AsyncSession, applicant_id: UUID) -> JobApplicant:
         """Fetch a single job applicant by ID."""
-        columns = JobApplicant.__table__.c
+        columns = inspect(JobApplicant).c
         try:
             result = await db.execute(select(JobApplicant).where(columns.id == applicant_id))
             applicant = result.scalar_one_or_none()
@@ -189,7 +288,7 @@ class JobApplicantService:
         Sorting: applied_at | name | score  ×  asc | desc  (nulls always last).
         Pagination: 1-based page + size.
         """
-        columns = JobApplicant.__table__.c
+        columns = inspect(JobApplicant).c
         # Cast analysis.score to Float safely; yields NULL when analysis is NULL
         # or when the key is absent, which integrates correctly with nullslast().
         score_col: ColumnElement[float | None] = case(

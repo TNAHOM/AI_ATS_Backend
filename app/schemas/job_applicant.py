@@ -79,6 +79,7 @@ class JobApplicantResponse(BaseModel):
 
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
+    retry_count: int = 0
     applied_at: datetime.datetime = Field(..., description="Timestamp when the application was submitted")
 
 
