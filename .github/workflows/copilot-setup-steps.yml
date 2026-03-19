@@ -2,12 +2,6 @@ name: Copilot Setup Steps
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
-  pull_request:
-    paths:
-      - .github/workflows/copilot-setup-steps.yml
 
 jobs:
   copilot-setup-steps:
@@ -32,7 +26,7 @@ jobs:
           installed=0
           for req_file in "${req_files[@]}"; do
             if [ -s "$req_file" ]; then
-              pip install -r "$req_file"
+              python -m pip install -r "$req_file" || { echo "Failed to install dependencies from $req_file"; exit 1; }
               installed=1
             fi
           done

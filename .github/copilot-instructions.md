@@ -129,10 +129,6 @@ When implementing `services/llm_service.py`, the grading prompt must strictly fo
 - Store embeddings of the **Standardized JSON Profile** (not raw text).
 - Create a specific service method in `services/vector_service.py` to handle cosine similarity queries.
 
-```
-
-```
-
 ## Copilot Coding Agent Task Quality
 
 To improve output quality when using GitHub Copilot coding agent, use these rules for every assigned task:
@@ -163,10 +159,10 @@ If guidance conflicts, prioritize:
 ### Clarification protocol
 
 If the answer is not available from:
-- assigned custom agent profile context provided by maintainers,
-- `.github/instructions/**/*.instructions.md`,
-- `.github/skills/**/SKILL.md`,
-- or this `copilot-instructions.md`,
+- this `.github/copilot-instructions.md` (repository-level instructions),
+- `.github/instructions/**/*.instructions.md` (path-specific instruction files),
+- `.github/skills/**/SKILL.md` (skill guidance),
+- or assigned custom agent profile context provided by maintainers (only when consistent with and not in conflict with higher-precedence guidance above),
 
 then ask concise clarification questions and wait for user confirmation before implementing uncertain behavior.
 
