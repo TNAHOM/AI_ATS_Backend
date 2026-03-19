@@ -129,6 +129,45 @@ When implementing `services/llm_service.py`, the grading prompt must strictly fo
 - Store embeddings of the **Standardized JSON Profile** (not raw text).
 - Create a specific service method in `services/vector_service.py` to handle cosine similarity queries.
 
-```
+## Copilot Coding Agent Task Quality
 
-```
+To improve output quality when using GitHub Copilot coding agent, use these rules for every assigned task:
+
+- Start with well-scoped issues:
+  - clear problem statement
+  - acceptance criteria
+  - expected files or areas to change when known
+- If requirements are ambiguous or missing, ask targeted clarification questions before implementing.
+- Prefer small, focused PRs over broad multi-feature changes.
+- Always preserve existing architecture and naming conventions in this repository.
+
+### Required context-loading order
+
+When starting work, load guidance in this order:
+1. `.github/copilot-instructions.md` (this file)
+2. `.github/instructions/**/*.instructions.md` (one or more files, as present in the repository; for example, `.github/instructions/ats-backend-enforcement.instructions.md`)
+3. `.github/skills/**/SKILL.md`
+4. Relevant source files in `app/` and `migrations/`
+5. Assigned custom agent profile context (task-specific custom Copilot agent guidance) when explicitly provided by maintainers
+
+If guidance conflicts, prioritize:
+1. Repository instructions (`.github/copilot-instructions.md`)
+2. Path-specific instruction files
+3. Skill guidance
+4. Agent profile guidance for the specific assigned agent
+
+### Clarification protocol
+
+If the answer is not available from:
+- this `.github/copilot-instructions.md` (repository-level instructions),
+- `.github/instructions/**/*.instructions.md` (path-specific instruction files),
+- `.github/skills/**/SKILL.md` (skill guidance),
+- or assigned custom agent profile context provided by maintainers (only when consistent with and not in conflict with higher-precedence guidance above),
+
+then ask concise clarification questions and wait for user confirmation before implementing uncertain behavior.
+
+### Validation expectations
+
+- Validate changed Python files for syntax correctness (`python -m compileall app`).
+- Run repository tests/linters if configured in the environment.
+- If dependencies are missing (for example, `pytest` not installed), report that clearly and continue with available validations.
