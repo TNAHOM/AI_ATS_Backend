@@ -5,7 +5,7 @@ from typing import List
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
-from pydantic import BaseModel, Field, ValidationError, conlist
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, conlist
 from app.schemas.AI_schema import ResumeData
 
 from app.core.config import settings
@@ -23,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 class ResumeGrade(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     score: int = Field(ge=0, le=100)
     reasoning: str
     missing_skills: List[str] = Field(default_factory=list)
@@ -30,6 +32,8 @@ class ResumeGrade(BaseModel):
 
 
 class ResumeJobAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     strengths: conlist(str, max_length=6) = Field(default_factory=list)
     weaknesses: conlist(str, max_length=5) = Field(default_factory=list)
     score: float = Field(ge=0, le=100)
@@ -160,7 +164,7 @@ class GeminiService:
             "Use a strict weighted rubric and return only JSON.\n\n"
             "SCORING RUBRIC (TOTAL 100):\n"
             "1) 20%: Job description summary + expected experience VS candidate summary + work history.\n"
-            "2) 30%: Job responsibilities VS candidate work experience + cover-letter evidence (if cover letter is absent, use work experience only).\n"
+            "2) 30%: Job responsibilities VS candidate work experience (and any cover-letter-style content found inline in the resume text; if none is present, use work experience only).\n"
             "3) 50%: Job requirements VS the full resume profile.\n\n"
             "BENCHMARK BANDS:\n"
             "- 90-100: Outstanding, interview immediately.\n"
@@ -170,6 +174,7 @@ class GeminiService:
             "- 0-39: Not a fit.\n\n"
             "OUTPUT RULES:\n"
             '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
+            "- score must be an integer from 0 to 100 (inclusive), as a whole number with no decimals.\n"
             "- reasoning must reference concrete resume-vs-JD evidence.\n"
             "- missing_skills must contain only critical missing requirements (infer from mandatory wording like must/required or explicit non-optional core skills; exclude preferred/nice-to-have items).\n"
             "- is_match should be true for score >= 75, else false.\n\n"
@@ -233,7 +238,7 @@ class GeminiService:
             "Assess resume-to-job alignment with reliable, evidence-based grading.\n\n"
             "Use this weighted framework:\n"
             "1) 20%: JD summary + expected experience vs candidate summary + work history.\n"
-            "2) 30%: JD responsibilities vs candidate work experience (and cover letter signals if present in resume JSON).\n"
+            "2) 30%: JD responsibilities vs candidate work experience.\n"
             "3) 50%: JD requirements vs full resume profile.\n\n"
             "Benchmark the final score as:\n"
             "- 90-100: outstanding fit, immediate interview recommendation\n"
