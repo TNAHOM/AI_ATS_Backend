@@ -29,6 +29,7 @@ class ApplicationStatus(str, enum.Enum):
     PROCESSING = "PROCESSING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    DEAD_LETTER = "DEAD_LETTER"
 
 class JobApplicant(SQLModel, table=True):
     __table_args__ = (
@@ -59,7 +60,9 @@ class JobApplicant(SQLModel, table=True):
     failed_reason: str | None = Field(default=None)
     extracted_data: dict | None = Field(default=None, sa_column=Column(sa.JSON, nullable=True))
     embedded_value: list[float] | None = Field(sa_column=Column(Vector(768)), default=None)
-    
+
+    retry_count: int = Field(default=0)
+
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, value: str | None) -> str | None:
