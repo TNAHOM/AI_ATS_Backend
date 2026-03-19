@@ -30,7 +30,7 @@ class ResumeGrade(BaseModel):
 
 
 class ResumeJobAnalysis(BaseModel):
-    strengths: List[str] = Field(default_factory=list, min_length=2, max_length=6)
+    strengths: List[str] = Field(default_factory=list, max_length=6)
     weaknesses: List[str] = Field(default_factory=list, max_length=5)
     score: float = Field(ge=0, le=100)
 
@@ -242,7 +242,7 @@ class GeminiService:
             "- 40-59: weak fit\n"
             "- 0-39: poor fit\n\n"
             "OUTPUT CONTRACT:\n"
-            '- "strengths": 2-6 concise evidence-based bullets tied to JD criteria.\n'
+            '- "strengths": 0-6 concise evidence-based bullets tied to JD criteria (target 2-6 when evidence exists).\n'
             '- "weaknesses": 0-5 concise gap-based bullets tied to JD criteria.\n'
             '- "score": numeric float from 0 to 100.\n'
             "Do not hallucinate unavailable evidence.\n"
