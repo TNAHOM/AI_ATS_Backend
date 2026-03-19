@@ -1,0 +1,43 @@
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies when requirements are present
+        run: |
+          python -m pip install --upgrade pip
+          # Install all discovered requirements files (if any) to keep setup maintainable
+          # as the repository structure evolves.
+          mapfile -t req_files < <(find . -maxdepth 3 -type f \( -name "requirements.txt" -o -name "requirements-*.txt" \) | sort)
+          installed=0
+          for req_file in "${req_files[@]}"; do
+            if [ -s "$req_file" ]; then
+              python -m pip install -r "$req_file" || { echo "Failed to install dependencies from $req_file"; exit 1; }
+              installed=1
+            fi
+          done
+          if [ "$installed" -eq 0 ]; then
+            echo "No non-empty requirements files found; skipping dependency installation."
+          fi
+
+      - name: Validate Python source syntax
+        run: |
+          if [ -d app ]; then
+            python -m compileall app
+          else
+            echo "No app directory found; skipping Python syntax validation."
+          fi
