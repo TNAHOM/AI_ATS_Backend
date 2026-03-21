@@ -139,12 +139,12 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
             )
             weighted_score_100 = max(0.0, min(100.0, weighted_score_100))
 
-            final_score_10 = float(round(weighted_score_100 / 10.0, 2))
+            final_score_100 = float(round(weighted_score_100, 2))
 
             extracted_data_payload: dict[str, Any] = _to_json_compatible(extracted_resume.model_dump())
             analysis_payload: dict[str, Any] = _to_json_compatible(
                 {
-                    "score": final_score_10,
+                    "score": final_score_100,
                     "strengths": ai_analysis.strengths,
                     "weakness": ai_analysis.weaknesses,
                 }
