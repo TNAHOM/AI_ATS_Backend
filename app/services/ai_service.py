@@ -29,7 +29,7 @@ class ResumeGrade(BaseModel):
     score: int = Field(ge=0, le=100)
     reasoning: str
     missing_skills: List[str]
-    is_match: bool
+    is_match: bool = Field(default=False)
 
 
 class ResumeJobAnalysis(BaseModel):
