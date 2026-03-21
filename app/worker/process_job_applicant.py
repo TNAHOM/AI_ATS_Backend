@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import math
+import re
 import uuid
 from typing import Any
 
@@ -57,6 +58,23 @@ def _to_json_compatible(value: Any) -> Any:
     return str(value)
 
 
+def _extract_required_experience_months(requirements: list[str]) -> int | None:
+    month_candidates: list[int] = []
+    year_pattern = re.compile(r"(\d+)\s*\+?\s*(?:years?|yrs?)", re.IGNORECASE)
+    month_pattern = re.compile(r"(\d+)\s*\+?\s*(?:months?|mos?)", re.IGNORECASE)
+
+    for requirement in requirements:
+        for match in year_pattern.findall(requirement):
+            month_candidates.append(int(match) * 12)
+        for match in month_pattern.findall(requirement):
+            month_candidates.append(int(match))
+
+    if not month_candidates:
+        return None
+
+    return max(month_candidates)
+
+
 async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes) -> None:
     """
     Background task to process a job applicant after creation.
@@ -104,9 +122,11 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
                 ai_service.get_embedding(normalized_resume_json),
                 ai_service.analyze_resume_against_job_post(
                     normalized_resume_json=normalized_resume_json,
+                    job_title=job.title,
                     job_description=job.description,
                     job_requirements=job.requirements,
                     job_responsibilities=job.responsibilities,
+                    candidate_months_of_work_experience=extracted_resume.monthsOfWorkExperience,
                 ),
             )
 
@@ -129,6 +149,13 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
 
             ai_score_normalized = max(0.0, min(1.0, ai_analysis.score / 100.0))
             penalty_points = min(len(ai_analysis.weaknesses) * 2, 10.0)
+            required_experience_months = _extract_required_experience_months(job.requirements)
+            experience_gap_penalty = 0.0
+            if required_experience_months and required_experience_months > 0:
+                candidate_months = max(float(extracted_resume.monthsOfWorkExperience), 0.0)
+                if candidate_months < required_experience_months:
+                    gap_ratio = 1.0 - (candidate_months / required_experience_months)
+                    experience_gap_penalty = min(20.0, gap_ratio * 20.0)
 
             weighted_score_100 = (
                 (req_similarity * 40.0)
@@ -136,15 +163,16 @@ async def process_job_applicant(job_applicant_id: uuid.UUID, resume_bytes: bytes
                 + (desc_similarity * 20.0)
                 + (ai_score_normalized * 10.0)
                 - penalty_points
+                - experience_gap_penalty
             )
             weighted_score_100 = max(0.0, min(100.0, weighted_score_100))
 
-            final_score_100 = float(round(weighted_score_100, 2))
+            final_score_10 = float(round(weighted_score_100 / 10.0, 2))
 
             extracted_data_payload: dict[str, Any] = _to_json_compatible(extracted_resume.model_dump())
             analysis_payload: dict[str, Any] = _to_json_compatible(
                 {
-                    "score": final_score_100,
+                    "score": final_score_10,
                     "strengths": ai_analysis.strengths,
                     "weakness": ai_analysis.weaknesses,
                 }

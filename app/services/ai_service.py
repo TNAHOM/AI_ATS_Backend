@@ -223,12 +223,17 @@ class GeminiService:
     async def analyze_resume_against_job_post(
         self,
         normalized_resume_json: str,
+        job_title: str,
         job_description: str,
         job_requirements: List[str],
         job_responsibilities: List[str],
+        candidate_months_of_work_experience: float,
     ) -> ResumeJobAnalysis:
         if not normalized_resume_json.strip():
             raise ValueError("Normalized resume JSON cannot be empty.")
+
+        if not job_title.strip():
+            raise ValueError("Job title cannot be empty.")
 
         if not job_description.strip():
             raise ValueError("Job description cannot be empty.")
@@ -238,11 +243,17 @@ class GeminiService:
 
         prompt = (
             "You are a senior recruiter-style ATS evaluator for a high-bar hiring process.\n"
-            "Assess resume-to-job alignment with reliable, evidence-based grading.\n\n"
+            "Assess resume-to-job alignment with reliable, evidence-based grading.\n"
+            "Think like a strict but fair hiring panel: reward direct evidence, penalize missing must-haves.\n\n"
             "Use this weighted framework:\n"
             "1) 20%: JD summary + expected experience vs candidate summary + work history.\n"
             "2) 30%: JD responsibilities vs candidate work experience.\n"
             "3) 50%: JD requirements vs full resume profile.\n\n"
+            "SCORING METHOD:\n"
+            "- Start at 0 and add only evidence-supported points within each weighted section.\n"
+            "- Treat explicit must/required criteria as high impact; missing these should reduce score noticeably.\n"
+            "- Do not inflate score for adjacent but non-equivalent technologies.\n"
+            "- Senior roles require strong senior-level evidence; internships can reward potential and fundamentals.\n\n"
             "Benchmark the final score as:\n"
             "- 90-100: outstanding fit, immediate interview recommendation\n"
             "- 75-89: strong fit, should be shortlisted\n"
@@ -256,9 +267,11 @@ class GeminiService:
             '- Always include both "strengths" and "weaknesses"; return [] when no items apply.\n'
             "Do not hallucinate unavailable evidence.\n"
             "Return STRICT valid JSON only.\n\n"
+            f"Job Title:\n{job_title.strip()}\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Job Requirements:\n{requirements_text}\n\n"
             f"Job Responsibilities:\n{responsibilities_text}\n\n"
+            f"Candidate Months Of Work Experience (numeric signal):\n{candidate_months_of_work_experience}\n\n"
             f"Normalized Resume JSON:\n{normalized_resume_json.strip()}"
         )
 
