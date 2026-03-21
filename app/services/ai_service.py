@@ -20,6 +20,7 @@ from tenacity import (
 from app.core.exceptions import AISafetyBlockedError, AIParseError, AIRateLimitError, AIServiceError
 
 logger = logging.getLogger(__name__)
+MATCH_SCORE_THRESHOLD = 75
 
 
 class ResumeGrade(BaseModel):
@@ -27,15 +28,15 @@ class ResumeGrade(BaseModel):
 
     score: int = Field(ge=0, le=100)
     reasoning: str
-    missing_skills: List[str] = Field(default_factory=list)
+    missing_skills: List[str]
     is_match: bool
 
 
 class ResumeJobAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    strengths: conlist(str, max_length=6) = Field(default_factory=list)
-    weaknesses: conlist(str, max_length=5) = Field(default_factory=list)
+    strengths: conlist(str, max_length=6)
+    weaknesses: conlist(str, max_length=5)
     score: float = Field(ge=0, le=100)
 
 
@@ -176,8 +177,9 @@ class GeminiService:
             '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
             "- score must be an integer from 0 to 100 (inclusive), as a whole number with no decimals.\n"
             "- reasoning must reference concrete resume-vs-JD evidence.\n"
+            "- missing_skills must always be present; use [] when there are no critical missing requirements.\n"
             "- missing_skills must contain only critical missing requirements (infer from mandatory wording like must/required or explicit non-optional core skills; exclude preferred/nice-to-have items).\n"
-            "- is_match should be true for score >= 75, else false.\n\n"
+            f"- is_match should be true for score >= {MATCH_SCORE_THRESHOLD}, else false.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Resume:\n{resume_text.strip()}\n\n"
             "Return STRICT valid JSON only."
@@ -199,7 +201,8 @@ class GeminiService:
                     "Resume grading was blocked by safety filters."
                 )
 
-            return ResumeGrade.model_validate_json(response.text)
+            parsed = ResumeGrade.model_validate_json(response.text)
+            return parsed.model_copy(update={"is_match": parsed.score >= MATCH_SCORE_THRESHOLD})
 
         except ValidationError as ve:
             logger.error("Schema validation failed for resume grading.")
@@ -250,6 +253,7 @@ class GeminiService:
             '- "strengths": 0-6 concise evidence-based bullets tied to JD criteria.\n'
             '- "weaknesses": 0-5 concise gap-based bullets tied to JD criteria.\n'
             '- "score": numeric float from 0 to 100.\n'
+            '- Always include both "strengths" and "weaknesses"; return [] when no items apply.\n'
             "Do not hallucinate unavailable evidence.\n"
             "Return STRICT valid JSON only.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
