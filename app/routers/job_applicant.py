@@ -109,7 +109,7 @@ async def retry_job_applicant(
     summary="List job applicants",
     description=(
         "Returns a paginated, filtered, and sorted list of job applicants. "
-        "Filter by job posting, progress status, seniority, processing status, and AI score range. "
+        "Filter by job posting, progress status, seniority, application status, and AI score range. "
         "Sort by application date, name, or AI score in ascending or descending order."
     ),
 )
