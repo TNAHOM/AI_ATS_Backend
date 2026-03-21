@@ -4,7 +4,7 @@ from uuid import UUID
 import uuid
 
 from fastapi import status
-from sqlalchemy import Float, asc, case, cast, desc, func, inspect, nullslast, select
+from sqlalchemy import Float, asc, cast, desc, func, inspect, nullslast, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
@@ -289,11 +289,12 @@ class JobApplicantService:
         Pagination: 1-based page + size.
         """
         columns = inspect(JobApplicant).c
-        # Cast analysis.score to Float safely; yields NULL when analysis is NULL
-        # or when the key is absent, which integrates correctly with nullslast().
-        score_col: ColumnElement[float | None] = case(
-            (columns.analysis.isnot(None), cast(columns.analysis["score"].astext, Float)),
-            else_=None,
+        # Extract analysis.score as text from JSONB and cast to Float.
+        # jsonb_extract_path_text returns NULL when analysis is NULL or the key is
+        # missing, which integrates correctly with nullslast().
+        score_col: ColumnElement[float | None] = cast(
+            func.jsonb_extract_path_text(columns.analysis, "score"),
+            Float,
         )
 
         conditions: list[ColumnElement[bool]] = []

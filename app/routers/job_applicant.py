@@ -155,6 +155,7 @@ async def list_job_applicants(
 @router.get(
     "/vector-search/{job_post_id}",
     response_model=ResponseEnvelope[JobApplicantVectorSearchData],
+    dependencies=[Depends(current_active_user)],
     summary="Rank applicants by vector similarity",
     description="Returns top applicants for a job ranked by weighted cosine similarity.",
 )
