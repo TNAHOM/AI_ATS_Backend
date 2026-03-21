@@ -289,11 +289,11 @@ class JobApplicantService:
         Pagination: 1-based page + size.
         """
         columns = inspect(JobApplicant).c
-        # Extract analysis.score as text from JSONB and cast to Float.
-        # jsonb_extract_path_text returns NULL when analysis is NULL or the key is
+        # Extract analysis.score as text from JSON and cast to Float.
+        # json_extract_path_text returns NULL when analysis is NULL or the key is
         # missing, which integrates correctly with nullslast().
         score_col: ColumnElement[float | None] = cast(
-            func.jsonb_extract_path_text(columns.analysis, "score"),
+            func.json_extract_path_text(columns.analysis, "score"),
             Float,
         )
 
