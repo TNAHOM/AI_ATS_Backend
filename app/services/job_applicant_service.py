@@ -1,15 +1,18 @@
 import logging
+from typing import Any, Sequence
+from uuid import UUID
 import uuid
 
 from fastapi import status
+from sqlalchemy import Float, asc, cast, desc, func, inspect, nullslast, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import BaseAppException, S3ServiceError
 from app.models.common import ProcessingStatus
-from app.models.job_applicant import ApplicationStatus, JobApplicant
-from app.schemas.job_applicant import JobApplicantCreate
+from app.models.job_applicant import ApplicationStatus, JobApplicant, ProgressStatus, SeniorityStatus
+from app.schemas.job_applicant import JobApplicantCreate, JobApplicantSortField, SortOrder
 from app.services.aws_service import s3_service
 
 logger = logging.getLogger(__name__)
@@ -43,10 +46,11 @@ class JobApplicantService:
 
         # Pre-check: reject duplicate application before touching S3, so we
         # avoid orphaning an upload and get a clean 409 without any DB error.
+        columns = inspect(JobApplicant).c
         existing_result = await db.execute(
             select(JobApplicant).where(
-                JobApplicant.job_post_id == job_applicant_data.job_post_id,
-                JobApplicant.email == job_applicant_data.email.lower(),
+                columns.job_post_id == job_applicant_data.job_post_id,
+                columns.email == job_applicant_data.email.lower(),
             )
         )
         if existing_result.scalar_one_or_none() is not None:
@@ -153,9 +157,10 @@ class JobApplicantService:
 
         Raises ``BaseAppException`` with appropriate error codes on failure.
         """
+        columns = inspect(JobApplicant).c
         try:
             result = await db.execute(
-                select(JobApplicant).where(JobApplicant.id == applicant_id)
+                select(JobApplicant).where(columns.id == applicant_id)
             )
             job_applicant = result.scalar_one_or_none()
         except SQLAlchemyError as e:
@@ -237,6 +242,114 @@ class JobApplicantService:
             applicant_id,
         )
         return job_applicant, resume_bytes
+
+    async def get_job_applicant(self, db: AsyncSession, applicant_id: UUID) -> JobApplicant:
+        """Fetch a single job applicant by ID."""
+        columns = inspect(JobApplicant).c
+        try:
+            result = await db.execute(select(JobApplicant).where(columns.id == applicant_id))
+            applicant = result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error("Database error while fetching applicant %s: %s", applicant_id, e)
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_FETCH_FAILED",
+                message="Failed to retrieve job applicant.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if applicant is None:
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_NOT_FOUND",
+                message="Job applicant not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+        return applicant
+
+    async def list_job_applicants(
+        self,
+        db: AsyncSession,
+        *,
+        page: int = 1,
+        size: int = 20,
+        job_post_id: UUID | None = None,
+        progress_status: ProgressStatus | None = None,
+        seniority_level: SeniorityStatus | None = None,
+        application_status: ApplicationStatus | None = None,
+        min_score: float | None = None,
+        max_score: float | None = None,
+        sort_by: JobApplicantSortField = JobApplicantSortField.APPLIED_AT,
+        sort_order: SortOrder = SortOrder.DESC,
+    ) -> tuple[Sequence[JobApplicant], int]:
+        """
+        Return a paginated, filtered, and sorted list of job applicants.
+
+        Filters: job_post_id, progress_status, seniority_level, application_status,
+                 min_score / max_score (based on AI analysis.score, 0-10 scale).
+        Sorting: applied_at | name | score  ×  asc | desc  (nulls always last).
+        Pagination: 1-based page + size.
+        """
+        columns = inspect(JobApplicant).c
+        # Extract analysis.score as text from JSON and cast to Float.
+        # json_extract_path_text returns NULL when analysis is NULL or the key is
+        # missing, which integrates correctly with nullslast().
+        score_col: ColumnElement[float | None] = cast(
+            func.json_extract_path_text(columns.analysis, "score"),
+            Float,
+        )
+
+        conditions: list[ColumnElement[bool]] = []
+        if job_post_id is not None:
+            conditions.append(columns.job_post_id == job_post_id)
+        if progress_status is not None:
+            conditions.append(columns.progress_status == progress_status)
+        if seniority_level is not None:
+            conditions.append(columns.seniority_level == seniority_level)
+        if application_status is not None:
+            conditions.append(columns.application_status == application_status)
+        if min_score is not None:
+            conditions.append(score_col >= min_score)
+        if max_score is not None:
+            conditions.append(score_col <= max_score)
+
+        sort_col_map: dict[JobApplicantSortField, ColumnElement[Any]] = {
+            JobApplicantSortField.APPLIED_AT: columns.applied_at,
+            JobApplicantSortField.NAME: columns.name,
+            JobApplicantSortField.SCORE: score_col,
+        }
+        raw_sort_col = sort_col_map.get(sort_by)
+        if raw_sort_col is None:
+            raise BaseAppException(
+                error_code="INVALID_SORT_FIELD",
+                message=f"Unsupported sort field: {sort_by!r}.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order_expr = nullslast(desc(raw_sort_col)) if sort_order == SortOrder.DESC else nullslast(asc(raw_sort_col))
+
+        list_query = select(JobApplicant)
+        count_query = select(func.count()).select_from(JobApplicant)
+        if conditions:
+            list_query = list_query.where(*conditions)
+            count_query = count_query.where(*conditions)
+
+        offset = (page - 1) * size
+        list_query = list_query.order_by(order_expr).offset(offset).limit(size)
+
+        try:
+            result = await db.execute(list_query)
+            applicants = result.scalars().all()
+
+            count_result = await db.execute(count_query)
+            total = int(count_result.scalar_one())
+        except SQLAlchemyError as e:
+            logger.error("Database error while listing applicants: %s", e)
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_LIST_FAILED",
+                message="Failed to retrieve job applicants.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return applicants, total
 
 
 job_applicant_service = JobApplicantService()

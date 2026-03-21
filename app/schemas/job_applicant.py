@@ -1,15 +1,29 @@
 from __future__ import annotations
 
+import datetime
+import enum
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.job_applicant import (
-    ProgressStatus, 
-    SeniorityStatus, 
-    ApplicationStatus
+    ProgressStatus,
+    SeniorityStatus,
+    ApplicationStatus,
 )
+
+
+class JobApplicantSortField(str, enum.Enum):
+    APPLIED_AT = "applied_at"
+    NAME = "name"
+    SCORE = "score"
+
+
+class SortOrder(str, enum.Enum):
+    ASC = "asc"
+    DESC = "desc"
+
 
 class ApplicantAnalysis(BaseModel):
     weakness: List[str] = []
@@ -53,7 +67,7 @@ class JobApplicantResponse(BaseModel):
     id: UUID
     job_post_id: UUID
 
-    name: str
+    name: str = Field(..., description="Applicant full name")
     email: EmailStr
     phone_number: str
     original_filename: Optional[str] = None
@@ -66,6 +80,7 @@ class JobApplicantResponse(BaseModel):
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
     retry_count: int = 0
+    applied_at: datetime.datetime = Field(..., description="Timestamp when the application was submitted")
 
 
 class JobApplicantVectorResult(BaseModel):
