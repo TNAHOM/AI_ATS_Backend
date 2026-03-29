@@ -118,7 +118,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `is_active: bool` (optional)
   - `is_superuser: bool` (optional)
 - **Request Body:** None
-- **Auth:** active user required
+- **Auth:** superuser required
 - **Success Response (200):** `ResponseEnvelope[list[UserRead]]`
 - **Error Responses:**
   - `422` validation error

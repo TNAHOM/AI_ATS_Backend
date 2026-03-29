@@ -1,48 +1,40 @@
-import base64
-import binascii
-import hashlib
-import hmac
+import asyncio
 import json
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+
+import httpx
+import jwt
+from jwt import InvalidTokenError
+from jwt.algorithms import RSAAlgorithm
 
 from app.core.config import settings
 from app.core.exceptions import BaseAppException
 
-# RFC 8017 Appendix B.1: DER-encoded DigestInfo prefix for SHA-256 in RSASSA-PKCS1-v1_5.
-_PKCS1_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
-
-
-def _base64url_decode(segment: str) -> bytes:
-    padded = segment + ("=" * (-len(segment) % 4))
-    return base64.urlsafe_b64decode(padded.encode("utf-8"))
-
 
 @dataclass(frozen=True)
-class _RsaJwk:
+class _CachedJwk:
     kid: str
-    n: int
-    e: int
-    alg: str
+    key: Any
 
 
 class ClerkJWTVerifier:
     def __init__(self) -> None:
-        self._jwks_cache: dict[str, _RsaJwk] = {}
+        self._jwks_cache: dict[str, _CachedJwk] = {}
         self._jwks_cached_at: float = 0.0
+        self._lock = asyncio.Lock()
 
     def _is_cache_stale(self) -> bool:
         return (time.time() - self._jwks_cached_at) > settings.CLERK_JWKS_CACHE_TTL_SECONDS
 
-    def _fetch_jwks(self) -> dict[str, _RsaJwk]:
+    async def _fetch_jwks(self) -> dict[str, _CachedJwk]:
         try:
-            with urlopen(settings.CLERK_JWKS_URL, timeout=5) as response:
-                body = response.read().decode("utf-8")
-            payload = json.loads(body)
-        except (URLError, TimeoutError, HTTPError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(settings.CLERK_JWKS_URL)
+                response.raise_for_status()
+                payload = response.json()
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
             raise BaseAppException(
                 error_code="AUTH_JWKS_FETCH_FAILED",
                 message="Unable to validate authentication token.",
@@ -64,26 +56,19 @@ class ClerkJWTVerifier:
                 status_code=503,
             )
 
-        parsed: dict[str, _RsaJwk] = {}
-        for key in keys:
-            if not isinstance(key, dict):
+        parsed: dict[str, _CachedJwk] = {}
+        for key_dict in keys:
+            if not isinstance(key_dict, dict):
                 continue
-            if key.get("kty") != "RSA":
-                continue
-            kid = key.get("kid")
-            n_val = key.get("n")
-            e_val = key.get("e")
-            if not isinstance(kid, str) or not isinstance(n_val, str) or not isinstance(e_val, str):
+            kid = key_dict.get("kid")
+            if not isinstance(kid, str):
                 continue
             try:
-                parsed[kid] = _RsaJwk(
-                    kid=kid,
-                    n=int.from_bytes(_base64url_decode(n_val), byteorder="big"),
-                    e=int.from_bytes(_base64url_decode(e_val), byteorder="big"),
-                    alg=str(key.get("alg") or "RS256"),
-                )
-            except (ValueError, binascii.Error):
+                public_key = RSAAlgorithm.from_jwk(json.dumps(key_dict))
+            except (ValueError, TypeError):
                 continue
+            parsed[kid] = _CachedJwk(kid=kid, key=public_key)
+
         if not parsed:
             raise BaseAppException(
                 error_code="AUTH_JWKS_INVALID",
@@ -92,139 +77,94 @@ class ClerkJWTVerifier:
             )
         return parsed
 
-    def _refresh_jwks_if_needed(self) -> None:
-        if not self._jwks_cache or self._is_cache_stale():
-            self._jwks_cache = self._fetch_jwks()
+    async def _refresh_jwks_if_needed(self) -> None:
+        if self._jwks_cache and not self._is_cache_stale():
+            return
+        async with self._lock:
+            if self._jwks_cache and not self._is_cache_stale():
+                return
+            self._jwks_cache = await self._fetch_jwks()
             self._jwks_cached_at = time.time()
 
-    def _verify_rs256_signature(self, signing_input: str, signature: bytes, jwk: _RsaJwk) -> bool:
-        digest = hashlib.sha256(signing_input.encode("utf-8")).digest()
-        digest_info = _PKCS1_SHA256_DIGEST_INFO_PREFIX + digest
+    async def _resolve_key(self, kid: str) -> Any:
+        await self._refresh_jwks_if_needed()
+        cached = self._jwks_cache.get(kid)
+        if cached is not None:
+            return cached.key
 
-        modulus_size = (jwk.n.bit_length() + 7) // 8
-        sig_int = int.from_bytes(signature, byteorder="big")
-        decrypted_int = pow(sig_int, jwk.e, jwk.n)
-        em = decrypted_int.to_bytes(modulus_size, byteorder="big")
-
-        if len(em) < len(digest_info) + 11:
-            return False
-        if not em.startswith(b"\x00\x01"):
-            return False
-        try:
-            separator_index = em.index(b"\x00", 2)
-        except ValueError:
-            return False
-        padding = em[2:separator_index]
-        if len(padding) < 8 or any(byte != 0xFF for byte in padding):
-            return False
-        recovered = em[separator_index + 1 :]
-        return hmac.compare_digest(recovered, digest_info)
-
-    def verify(self, token: str) -> dict[str, Any]:
-        token_parts = token.split(".")
-        if len(token_parts) != 3:
+        async with self._lock:
+            self._jwks_cache = await self._fetch_jwks()
+            self._jwks_cached_at = time.time()
+            cached = self._jwks_cache.get(kid)
+        if cached is None:
             raise BaseAppException(
-                error_code="AUTH_INVALID_TOKEN",
+                error_code="AUTH_UNKNOWN_KEY_ID",
                 message="Invalid authentication token.",
                 status_code=401,
             )
+        return cached.key
 
-        encoded_header, encoded_payload, encoded_signature = token_parts
+    async def verify(self, token: str) -> dict[str, Any]:
         try:
-            header = json.loads(_base64url_decode(encoded_header))
-            payload = json.loads(_base64url_decode(encoded_payload))
-            signature = _base64url_decode(encoded_signature)
-        except (json.JSONDecodeError, ValueError, UnicodeDecodeError, binascii.Error) as exc:
+            header = jwt.get_unverified_header(token)
+        except InvalidTokenError as exc:
             raise BaseAppException(
                 error_code="AUTH_INVALID_TOKEN",
                 message="Invalid authentication token.",
                 status_code=401,
             ) from exc
 
-        if not isinstance(header, dict) or not isinstance(payload, dict):
-            raise BaseAppException(
-                error_code="AUTH_INVALID_TOKEN",
-                message="Invalid authentication token.",
-                status_code=401,
-            )
-
-        alg = header.get("alg")
         kid = header.get("kid")
-        if alg != "RS256" or not isinstance(kid, str):
+        alg = header.get("alg")
+        if not isinstance(kid, str) or alg != "RS256":
             raise BaseAppException(
                 error_code="AUTH_INVALID_TOKEN",
                 message="Invalid authentication token.",
                 status_code=401,
             )
 
-        self._refresh_jwks_if_needed()
-        jwk = self._jwks_cache.get(kid)
-        if jwk is None:
-            self._jwks_cache = self._fetch_jwks()
-            self._jwks_cached_at = time.time()
-            jwk = self._jwks_cache.get(kid)
-        if jwk is None:
-            raise BaseAppException(
-                error_code="AUTH_UNKNOWN_KEY_ID",
-                message="Invalid authentication token.",
-                status_code=401,
-            )
+        key = await self._resolve_key(kid)
 
-        signing_input = f"{encoded_header}.{encoded_payload}"
-        if not self._verify_rs256_signature(signing_input=signing_input, signature=signature, jwk=jwk):
-            raise BaseAppException(
-                error_code="AUTH_INVALID_SIGNATURE",
-                message="Invalid authentication token.",
-                status_code=401,
+        options = {
+            "require": ["exp", "iat", "iss", "sub"],
+            "verify_signature": True,
+            "verify_exp": True,
+            "verify_iat": True,
+            "verify_nbf": True,
+            "verify_aud": settings.CLERK_AUDIENCE is not None,
+            "verify_iss": True,
+            "verify_sub": True,
+        }
+        try:
+            decoded = jwt.decode(
+                token,
+                key=key,
+                algorithms=["RS256"],
+                issuer=settings.CLERK_ISSUER,
+                audience=settings.CLERK_AUDIENCE,
+                options=options,
+                leeway=settings.CLERK_JWT_LEEWAY_SECONDS,
             )
-
-        now = int(time.time())
-        leeway = settings.CLERK_JWT_LEEWAY_SECONDS
-        exp = payload.get("exp")
-        nbf = payload.get("nbf")
-        iat = payload.get("iat")
-        iss = payload.get("iss")
-        aud = payload.get("aud")
-
-        if not isinstance(exp, int) or now > exp + leeway:
-            raise BaseAppException(
-                error_code="AUTH_TOKEN_EXPIRED",
-                message="Authentication token has expired.",
-                status_code=401,
-            )
-        if isinstance(nbf, int) and now + leeway < nbf:
-            raise BaseAppException(
-                error_code="AUTH_TOKEN_NOT_YET_VALID",
-                message="Authentication token is not yet valid.",
-                status_code=401,
-            )
-        if isinstance(iat, int) and now + leeway < iat:
-            raise BaseAppException(
-                error_code="AUTH_TOKEN_NOT_YET_VALID",
-                message="Authentication token is not yet valid.",
-                status_code=401,
-            )
-        if not isinstance(iss, str) or iss != settings.CLERK_ISSUER:
-            raise BaseAppException(
-                error_code="AUTH_INVALID_ISSUER",
-                message="Invalid authentication token.",
-                status_code=401,
-            )
-        if settings.CLERK_AUDIENCE:
-            if isinstance(aud, str):
-                valid_aud = aud == settings.CLERK_AUDIENCE
-            elif isinstance(aud, list):
-                valid_aud = settings.CLERK_AUDIENCE in aud
+        except InvalidTokenError as exc:
+            if isinstance(exc, jwt.ExpiredSignatureError):
+                error_code = "AUTH_TOKEN_EXPIRED"
+                message = "Authentication token has expired."
             else:
-                valid_aud = False
-            if not valid_aud:
-                raise BaseAppException(
-                    error_code="AUTH_INVALID_AUDIENCE",
-                    message="Invalid authentication token.",
-                    status_code=401,
-                )
+                error_code = "AUTH_INVALID_TOKEN"
+                message = "Invalid authentication token."
+            raise BaseAppException(
+                error_code=error_code,
+                message=message,
+                status_code=401,
+            ) from exc
 
-        return payload
+        if not isinstance(decoded, dict):
+            raise BaseAppException(
+                error_code="AUTH_INVALID_TOKEN",
+                message="Invalid authentication token.",
+                status_code=401,
+            )
+        return decoded
 
 
 clerk_jwt_verifier = ClerkJWTVerifier()

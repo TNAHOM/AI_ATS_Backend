@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.core.database import get_async_session
-from app.dependencies import current_active_user
+from app.dependencies import current_superuser
 
 from app.schemas.common import ResponseEnvelope
 from app.schemas.auth import AuthenticatedUser
@@ -28,7 +28,7 @@ async def get_all_users(
     is_verified: bool | None = None,
     is_active: bool | None = None,
     is_superuser: bool | None = None,
-    _current_user: AuthenticatedUser = Depends(current_active_user),
+    _current_user: AuthenticatedUser = Depends(current_superuser),
     db: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[list[UserRead]]:
     users_list = await users.get_all_users(

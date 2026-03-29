@@ -23,7 +23,7 @@ async def current_active_user(
             status_code=401,
         )
 
-    payload = clerk_jwt_verifier.verify(credentials.credentials)
+    payload = await clerk_jwt_verifier.verify(credentials.credentials)
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
         raise BaseAppException(
@@ -48,29 +48,34 @@ async def current_active_user(
                 if isinstance(nested_email, str):
                     email = nested_email
 
-    internal_user_id = None
-    is_active = True
-    is_superuser = False
-    if email is not None:
-        result = await db.execute(select(User).where(User.email == email))
-        db_user = result.scalar_one_or_none()
-        if db_user is not None and not db_user.is_active:
-            raise BaseAppException(
-                error_code="AUTH_INACTIVE_USER",
-                message="User account is inactive.",
-                status_code=403,
-            )
-        if db_user is not None:
-            internal_user_id = db_user.id
-            is_active = db_user.is_active
-            is_superuser = db_user.is_superuser
+    if email is None:
+        raise BaseAppException(
+            error_code="AUTH_USER_NOT_PROVISIONED",
+            message="Authenticated user is not provisioned in the backend.",
+            status_code=403,
+        )
+
+    result = await db.execute(select(User).where(User.email == email))
+    db_user = result.scalar_one_or_none()
+    if db_user is None:
+        raise BaseAppException(
+            error_code="AUTH_USER_NOT_PROVISIONED",
+            message="Authenticated user is not provisioned in the backend.",
+            status_code=403,
+        )
+    if not db_user.is_active:
+        raise BaseAppException(
+            error_code="AUTH_INACTIVE_USER",
+            message="User account is inactive.",
+            status_code=403,
+        )
 
     return AuthenticatedUser(
         clerk_id=subject,
         email=email,
-        internal_user_id=internal_user_id,
-        is_active=is_active,
-        is_superuser=is_superuser,
+        internal_user_id=db_user.id,
+        is_active=db_user.is_active,
+        is_superuser=db_user.is_superuser,
     )
 
 
@@ -83,17 +88,5 @@ async def current_superuser(
             message="Insufficient permissions for this resource.",
             status_code=403,
             details={},
-        )
-    return user
-
-
-async def current_provisioned_user(
-    user: AuthenticatedUser = Depends(current_active_user),
-) -> AuthenticatedUser:
-    if user.internal_user_id is None:
-        raise BaseAppException(
-            error_code="AUTH_USER_NOT_PROVISIONED",
-            message="Authenticated user is not provisioned in the backend.",
-            status_code=403,
         )
     return user
