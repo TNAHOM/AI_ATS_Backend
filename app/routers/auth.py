@@ -1,9 +1,7 @@
 from fastapi import Depends
-from app.models.user import User
-from app.core.security import auth_backend
 from app.schemas.common import MessageData, ResponseEnvelope
-from app.schemas.user import UserRead, UserCreate
-from app.dependencies import fastapi_users, current_active_user
+from app.schemas.auth import AuthenticatedUser
+from app.dependencies import current_active_user
 
 from fastapi import APIRouter
 
@@ -14,43 +12,16 @@ auth = APIRouter(
     tags=["auth"],
 )
 
-# Login and Logout routes are provided by FastAPIUsers
-auth.include_router(
-    fastapi_users.get_auth_router(auth_backend),
-    prefix="/jwt",
-    tags=["auth"],
-)
-
-# Add the Register Route
-auth.include_router(
-    fastapi_users.get_register_router(UserRead, UserCreate),
-    prefix="",
-    tags=["auth"],
-)
-
-# Add the Verify Route
-auth.include_router(
-    fastapi_users.get_verify_router(UserRead),
-    prefix="/verify",
-    tags=["auth"],
-)
-
-# Add the Reset Password Route
-auth.include_router(
-    fastapi_users.get_reset_password_router(),
-    prefix="/auth",
-    tags=["auth"],
-)
-
 @auth.get(
     "/authenticated-route",
     response_model=ResponseEnvelope[MessageData],
     summary="Get authenticated greeting",
     description="Returns a standardized greeting envelope for an authenticated user.",
 )
-async def authenticated_route(user: User = Depends(current_active_user)) -> ResponseEnvelope[MessageData]:
+async def authenticated_route(user: AuthenticatedUser = Depends(current_active_user)) -> ResponseEnvelope[MessageData]:
+    user_identifier = user.email or user.id
     return ResponseEnvelope[MessageData](
         success=True,
         message="Authenticated user fetched successfully.",
-        data=MessageData(message=f"Hello {user.email}!"),
+        data=MessageData(message=f"Hello {user_identifier}!"),
     )

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends
 from app.core.database import get_async_session
-from app.dependencies import fastapi_users, current_active_user
+from app.dependencies import current_active_user
 
 from app.schemas.common import ResponseEnvelope
-from app.schemas.user import UserRead, UserUpdate
+from app.schemas.auth import AuthenticatedUser
+from app.schemas.user import UserRead
 from app.services import users
-from app.models.user import User, UserType
+from app.models.user import UserType
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -27,7 +28,7 @@ async def get_all_users(
     is_verified: bool | None = None,
     is_active: bool | None = None,
     is_superuser: bool | None = None,
-    _current_user: User = Depends(current_active_user),
+    _current_user: AuthenticatedUser = Depends(current_active_user),
     db: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[list[UserRead]]:
     users_list = await users.get_all_users(
@@ -45,10 +46,3 @@ async def get_all_users(
         message="Users retrieved successfully.",
         data=[UserRead.model_validate(user_item) for user_item in users_list],
     )
-
-
-user.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
-    prefix="",
-    tags=["users"],
-)
