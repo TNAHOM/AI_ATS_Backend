@@ -1,9 +1,11 @@
+from typing import cast
+from uuid import UUID
+
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
-from app.core.exceptions import BaseAppException
-from app.dependencies import current_active_user
+from app.dependencies import current_provisioned_user
 from app.schemas.auth import AuthenticatedUser
 from app.schemas.common import ResponseEnvelope
 from app.schemas.job import JobCreate, JobResponse
@@ -27,15 +29,11 @@ async def create_job(
     job_in: JobCreate,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
-    user: AuthenticatedUser = Depends(current_active_user),
+    user: AuthenticatedUser = Depends(current_provisioned_user),
 ) -> ResponseEnvelope[JobResponse]:
-    if user.internal_user_id is None:
-        raise BaseAppException(
-            error_code="AUTH_USER_NOT_PROVISIONED",
-            message="Authenticated user is not provisioned in the backend.",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-    new_job = await job_service.create_job(session, job_in, user.internal_user_id)
+    # current_provisioned_user guarantees internal_user_id is populated.
+    internal_user_id = cast(UUID, user.internal_user_id)
+    new_job = await job_service.create_job(session, job_in, internal_user_id)
     background_tasks.add_task(generate_job_embeddings, job_id=new_job.id)
 
     return ResponseEnvelope[JobResponse](

@@ -12,6 +12,9 @@ from urllib.request import urlopen
 from app.core.config import settings
 from app.core.exceptions import BaseAppException
 
+# RFC 8017 Appendix B.1: DER-encoded DigestInfo prefix for SHA-256 in RSASSA-PKCS1-v1_5.
+_PKCS1_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
+
 
 def _base64url_decode(segment: str) -> bytes:
     padded = segment + ("=" * (-len(segment) % 4))
@@ -95,11 +98,10 @@ class ClerkJWTVerifier:
             self._jwks_cached_at = time.time()
 
     def _verify_rs256_signature(self, signing_input: str, signature: bytes, jwk: _RsaJwk) -> bool:
-        digest_info_sha256_prefix = bytes.fromhex("3031300d060960864801650304020105000420")
         digest = hashlib.sha256(signing_input.encode("utf-8")).digest()
-        digest_info = digest_info_sha256_prefix + digest
+        digest_info = _PKCS1_SHA256_DIGEST_INFO_PREFIX + digest
 
-        modulus_size = max(1, (jwk.n.bit_length() + 7) // 8)
+        modulus_size = (jwk.n.bit_length() + 7) // 8
         sig_int = int.from_bytes(signature, byteorder="big")
         decrypted_int = pow(sig_int, jwk.e, jwk.n)
         em = decrypted_int.to_bytes(modulus_size, byteorder="big")

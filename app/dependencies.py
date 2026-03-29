@@ -1,5 +1,3 @@
-from typing import Any
-
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -51,6 +49,8 @@ async def current_active_user(
                     email = nested_email
 
     internal_user_id = None
+    is_active = True
+    is_superuser = False
     if email is not None:
         result = await db.execute(select(User).where(User.email == email))
         db_user = result.scalar_one_or_none()
@@ -62,25 +62,38 @@ async def current_active_user(
             )
         if db_user is not None:
             internal_user_id = db_user.id
+            is_active = db_user.is_active
+            is_superuser = db_user.is_superuser
 
     return AuthenticatedUser(
-        id=subject,
+        clerk_id=subject,
         email=email,
         internal_user_id=internal_user_id,
-        is_active=True,
-        is_superuser=False,
+        is_active=is_active,
+        is_superuser=is_superuser,
     )
 
 
 async def current_superuser(
     user: AuthenticatedUser = Depends(current_active_user),
 ) -> AuthenticatedUser:
-    metadata: dict[str, Any] = {}
     if not user.is_superuser:
         raise BaseAppException(
             error_code="AUTH_FORBIDDEN",
             message="Insufficient permissions for this resource.",
             status_code=403,
-            details=metadata,
+            details={},
+        )
+    return user
+
+
+async def current_provisioned_user(
+    user: AuthenticatedUser = Depends(current_active_user),
+) -> AuthenticatedUser:
+    if user.internal_user_id is None:
+        raise BaseAppException(
+            error_code="AUTH_USER_NOT_PROVISIONED",
+            message="Authenticated user is not provisioned in the backend.",
+            status_code=403,
         )
     return user

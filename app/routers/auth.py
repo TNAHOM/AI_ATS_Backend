@@ -19,7 +19,7 @@ auth = APIRouter(
     description="Returns a standardized greeting envelope for an authenticated user.",
 )
 async def authenticated_route(user: AuthenticatedUser = Depends(current_active_user)) -> ResponseEnvelope[MessageData]:
-    user_identifier = user.email or user.id
+    user_identifier = user.email or user.clerk_id
     return ResponseEnvelope[MessageData](
         success=True,
         message="Authenticated user fetched successfully.",
