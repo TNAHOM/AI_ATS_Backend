@@ -176,7 +176,6 @@ class GeminiService:
             "OUTPUT RULES:\n"
             '- Return strict JSON with keys: "score", "reasoning", "missing_skills", "is_match".\n'
             "- score must be an integer from 0 to 100 (inclusive), as a whole number with no decimals.\n"
-            "- score must be an integer from 0 to 100 (inclusive), as a whole number with no decimals.\n"
             "- reasoning must reference concrete resume-vs-JD evidence.\n"
             "- missing_skills must always be present; use [] when there are no critical missing requirements.\n"
             "- missing_skills must contain only critical missing requirements (infer from mandatory wording like must/required or explicit non-optional core skills; exclude preferred/nice-to-have items).\n"
