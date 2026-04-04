@@ -20,7 +20,7 @@ from tenacity import (
 from app.core.exceptions import AISafetyBlockedError, AIParseError, AIRateLimitError, AIServiceError
 
 logger = logging.getLogger(__name__)
-MATCH_SCORE_THRESHOLD = 75
+MATCH_SCORE_THRESHOLD = getattr(settings, "MATCH_SCORE_THRESHOLD", 75)
 
 
 class ResumeGrade(BaseModel):
