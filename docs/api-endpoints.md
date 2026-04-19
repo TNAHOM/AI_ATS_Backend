@@ -92,114 +92,22 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
 
 ## Auth Endpoints (`/auth`)
 
-### 3) `POST /auth/jwt/login`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:** `application/x-www-form-urlencoded`
-  - `username` (required)
-  - `password` (required)
-  - `grant_type` (optional, pattern `password`)
-  - `scope` (optional)
-  - `client_id` (optional)
-  - `client_secret` (optional)
-- **Success Response (200):**
-  - OpenAPI schema: `BearerResponse` (`access_token`, `token_type`)
-  - Runtime response on `/auth`: wrapped into standard envelope
-- **Error Responses:**
-  - `400` invalid credentials (`ErrorModel` in OpenAPI, wrapped at runtime)
-  - `422` validation error
-
-### 4) `POST /auth/jwt/logout`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:** None
-- **Success Response (200):** empty object (wrapped at runtime)
-- **Error Responses:**
-  - `401` unauthorized
-
-### 5) `POST /auth/register`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:** `UserCreate`
-  - `email` (required)
-  - `password` (required)
-  - `user_type` (required, `UserType`)
-  - `first_name` (required)
-  - `last_name` (required)
-  - `phone_number` (required)
-  - `is_active` (optional)
-  - `is_superuser` (optional)
-  - `is_verified` (optional)
-- **Success Response (201):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/auth`: wrapped into standard envelope
-- **Error Responses:**
-  - `400` business/auth error
-  - `422` validation error
-
-### 6) `POST /auth/verify/request-verify-token`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:**
-  - `email` (required)
-- **Success Response (202):** empty object (wrapped at runtime)
-- **Error Responses:**
-  - `422` validation error
-
-### 7) `POST /auth/verify/verify`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:**
-  - `token` (required)
-- **Success Response (200):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/auth`: wrapped into standard envelope
-- **Error Responses:**
-  - `400` invalid/expired token
-  - `422` validation error
-
-### 8) `POST /auth/auth/forgot-password`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:**
-  - `email` (required)
-- **Success Response (202):** empty object (wrapped at runtime)
-- **Error Responses:**
-  - `422` validation error
-
-### 9) `POST /auth/auth/reset-password`
-
-- **Method:** `POST`
-- **Params:** None
-- **Request Body:**
-  - `token` (required)
-  - `password` (required)
-- **Success Response (200):** empty object (wrapped at runtime)
-- **Error Responses:**
-  - `400` invalid token/password policy issue
-  - `422` validation error
-
-### 10) `GET /auth/authenticated-route`
+### 3) `GET /auth/authenticated-route`
 
 - **Method:** `GET`
 - **Params:** None
 - **Request Body:** None
-- **Auth:** active user required
+- **Auth:** valid Clerk bearer JWT required (frontend-issued token)
 - **Success Response (200):** `ResponseEnvelope[MessageData]`
 - **Error Responses:**
-  - `401` unauthorized
+  - `401` invalid/missing/expired token
+  - `403` inactive or unprovisioned backend user
 
 ---
 
 ## User Endpoints (`/users`)
 
-### 11) `GET /users/all`
+### 4) `GET /users/all`
 
 - **Method:** `GET`
 - **Query Params:**
@@ -210,91 +118,15 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `is_active: bool` (optional)
   - `is_superuser: bool` (optional)
 - **Request Body:** None
-- **Auth:** active user required
+- **Auth:** superuser required
 - **Success Response (200):** `ResponseEnvelope[list[UserRead]]`
 - **Error Responses:**
   - `422` validation error
   - `500` with `USER_LIST_FAILED` on DB failure
 
-### 12) `GET /users/me`
-
-- **Method:** `GET`
-- **Params:** None
-- **Request Body:** None
-- **Auth:** active user required
-- **Success Response (200):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/users`: wrapped into standard envelope
-- **Error Responses:**
-  - `401` unauthorized
-
-### 13) `PATCH /users/me`
-
-- **Method:** `PATCH`
-- **Params:** None
-- **Request Body:** `UserUpdate`
-  - optional fields: `password`, `email`, `is_active`, `is_superuser`, `is_verified`
-  - required in current schema: `user_type`, `first_name`, `last_name`, `phone_number`
-- **Success Response (200):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/users`: wrapped into standard envelope
-- **Error Responses:**
-  - `400` update/auth error
-  - `401` unauthorized
-  - `422` validation error
-
-### 14) `GET /users/{id}`
-
-- **Method:** `GET`
-- **Path Params:**
-  - `id: UUID`
-- **Request Body:** None
-- **Auth:** active user (permissions enforced by fastapi-users)
-- **Success Response (200):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/users`: wrapped into standard envelope
-- **Error Responses:**
-  - `401` unauthorized
-  - `403` forbidden
-  - `404` user not found
-  - `422` validation error
-
-### 15) `PATCH /users/{id}`
-
-- **Method:** `PATCH`
-- **Path Params:**
-  - `id: UUID`
-- **Request Body:** `UserUpdate`
-- **Auth:** active user (permissions enforced by fastapi-users)
-- **Success Response (200):**
-  - OpenAPI schema: `UserRead`
-  - Runtime response on `/users`: wrapped into standard envelope
-- **Error Responses:**
-  - `400` update/auth error
-  - `401` unauthorized
-  - `403` forbidden
-  - `404` user not found
-  - `422` validation error
-
-### 16) `DELETE /users/{id}`
-
-- **Method:** `DELETE`
-- **Path Params:**
-  - `id: UUID`
-- **Request Body:** None
-- **Auth:** active user (permissions enforced by fastapi-users)
-- **Success Response (204):** no content
-- **Error Responses:**
-  - `401` unauthorized
-  - `403` forbidden
-  - `404` user not found
-  - `422` validation error
-
----
-
 ## Job Endpoints (`/jobs`)
 
-### 17) `POST /jobs/`
+### 5) `POST /jobs/`
 
 - **Method:** `POST`
 - **Query/Path Params:** None
@@ -315,7 +147,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `422` validation error
   - `500` with `JOB_CREATE_FAILED` on DB failure
 
-### 18) `GET /jobs/`
+### 6) `GET /jobs/`
 
 - **Method:** `GET`
 - **Query Params:**
@@ -331,7 +163,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
 
 ## Job Applicant Endpoints (`/job-applicants`)
 
-### 19) `POST /job-applicants/`
+### 7) `POST /job-applicants/`
 
 - **Method:** `POST`
 - **Request Body:** `multipart/form-data`
@@ -349,7 +181,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `502` `RESUME_UPLOAD_FAILED`
   - `500` `JOB_APPLICANT_CREATE_FAILED`
 
-### 20) `POST /job-applicants/{applicant_id}/retry`
+### 8) `POST /job-applicants/{applicant_id}/retry`
 
 - **Method:** `POST`
 - **Path Params:**
@@ -363,7 +195,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `502` `RESUME_DOWNLOAD_FAILED`
   - `500` `APPLICANT_FETCH_FAILED`, `APPLICANT_RETRY_RESET_FAILED`
 
-### 21) `GET /job-applicants/`
+### 9) `GET /job-applicants/`
 
 - **Method:** `GET`
 - **Query Params:**
@@ -385,7 +217,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `422` validation error
   - `500` `JOB_APPLICANT_LIST_FAILED`
 
-### 22) `GET /job-applicants/vector-search/{job_post_id}`
+### 10) `GET /job-applicants/vector-search/{job_post_id}`
 
 - **Method:** `GET`
 - **Path Params:**
@@ -406,7 +238,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
   - `422` validation error
   - `500` `VECTOR_SEARCH_FAILED`
 
-### 23) `GET /job-applicants/{applicant_id}`
+### 11) `GET /job-applicants/{applicant_id}`
 
 - **Method:** `GET`
 - **Path Params:**

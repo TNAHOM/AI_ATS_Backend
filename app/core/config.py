@@ -1,3 +1,6 @@
+from typing import Self
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -11,6 +14,17 @@ class Settings(BaseSettings):
     AWS_REGION: str
     S3_BUCKET_NAME: str
     MAX_JOB_APPLICANT_RETRIES: int = 3
+    CLERK_JWKS_URL: str | None = None
+    CLERK_ISSUER: str
+    CLERK_AUDIENCE: str | None = None
+    CLERK_JWKS_CACHE_TTL_SECONDS: int = 3600
+    CLERK_JWT_LEEWAY_SECONDS: int = 10
+
+    @model_validator(mode="after")
+    def derive_clerk_jwks_url(self) -> Self:
+        if not self.CLERK_JWKS_URL:
+            self.CLERK_JWKS_URL = f"{self.CLERK_ISSUER.rstrip('/')}/.well-known/jwks.json"
+        return self
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
