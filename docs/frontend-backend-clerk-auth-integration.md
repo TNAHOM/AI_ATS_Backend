@@ -84,9 +84,18 @@ Do not rely on Clerk cookies directly for cross-origin FastAPI calls.
 Create a Clerk JWT template (for example `backend-api`) and use it consistently for backend requests.
 
 Recommended template settings:
-- **Custom signing key**: OFF
+- **Custom signing key**: OFF (recommended)
 - **Audience**: set explicitly (example: `https://api.yourapp.com`)
 - **Issuer/JWKS**: keep Clerk defaults for your instance
+
+Audience note:
+- `aud` is an identifier string, not a required reachable URL.
+- You can use values like `api://ai-ats-backend` (prod identifier), `https://api.yourapp.com` (prod URL-style identifier), or `api://ai-ats-dev` (development identifier).
+
+Why keep custom signing key OFF:
+- This backend already validates Clerk-issued RS256 tokens using Clerk JWKS.
+- Keeping Clerk-managed signing avoids extra key rotation/secret distribution overhead.
+- Only enable custom signing key if you explicitly need external key management and can operate rotation safely.
 
 In **Customize session token**, include at least:
 
@@ -105,14 +114,26 @@ Why:
 In backend `.env`:
 
 - `CLERK_ISSUER` = your instance issuer domain
-- `CLERK_JWKS_URL` = same issuer domain + `/.well-known/jwks.json` (or leave unset to auto-derive)
+- `CLERK_JWKS_URL` = **recommended unset** (backend auto-derives from `CLERK_ISSUER`)
+  - Set it explicitly only if you intentionally need a non-standard/custom JWKS endpoint
 - `CLERK_AUDIENCE` = exact value configured in JWT template audience
 
 If token `aud` and backend `CLERK_AUDIENCE` mismatch, requests fail with `401 AUTH_INVALID_TOKEN`.
 
+JWKS troubleshooting:
+- If JWT verification fails with JWKS fetch errors, verify:
+  1. `CLERK_ISSUER` is a valid Clerk issuer URL,
+  2. derived URL `<CLERK_ISSUER>/.well-known/jwks.json` is reachable from backend runtime,
+  3. your runtime can resolve and reach Clerk over HTTPS.
+
 ### 2.4 Provision internal backend user early
 A valid Clerk token is not enough by itself.
 Frontend must ensure backend user provisioning happens immediately after sign-up/sign-in (before protected business calls).
+
+Important note:
+- This repository currently enforces the provisioning check in auth dependencies.
+- If your backend does not yet expose a dedicated self-provision endpoint, add one (or call your existing onboarding endpoint) and run it right after successful Clerk sign-in.
+- The minimum payload should contain the user email used for backend lookup plus any required profile metadata.
 
 ---
 
@@ -174,19 +195,25 @@ export function useBackendApi() {
   const { getToken } = useAuth();
 
   const callBackend = async (path: string, init?: RequestInit) => {
-    const token = await getToken({ template: "backend-api" });
+    const request = async (token: string) =>
+      fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${path}`, {
+        ...init,
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+    let token = await getToken({ template: "backend-api" });
     if (!token) throw new Error("No auth token available");
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${path}`, {
-      ...init,
-      headers: {
-        ...(init?.headers ?? {}),
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    let response = await request(token);
 
+    // One safe retry on 401 with a freshly requested token.
     if (response.status === 401) {
-      // Optional: attempt one refresh/retry strategy here
+      token = await getToken({ template: "backend-api", skipCache: true });
+      if (!token) throw new Error("No auth token available");
+      response = await request(token);
     }
 
     return response;
@@ -194,6 +221,22 @@ export function useBackendApi() {
 
   return { callBackend };
 }
+```
+
+Provisioning handshake example (frontend-side pseudocode):
+```ts
+const { getToken } = useAuth();
+const token = await getToken({ template: "backend-api" });
+await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/your-provision-endpoint`, {
+  headers: {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  },
+  method: "POST",
+  body: JSON.stringify({
+    // include fields your backend provisioning endpoint requires
+  }),
+});
 ```
 
 ---
@@ -204,6 +247,8 @@ export function useBackendApi() {
 - [ ] Template includes `aud` and `email` claims
 - [ ] Frontend uses `getToken({ template: "backend-api" })`
 - [ ] Frontend sends `Authorization: Bearer <token>`
-- [ ] `CLERK_ISSUER`, `CLERK_JWKS_URL`, `CLERK_AUDIENCE` are aligned with Clerk settings
+- [ ] `CLERK_ISSUER` matches your Clerk instance issuer domain
+- [ ] `CLERK_AUDIENCE` matches JWT template audience value exactly
+- [ ] `CLERK_JWKS_URL` is unset (recommended), or explicitly set only for a non-standard JWKS endpoint
 - [ ] Protected endpoint call succeeds for provisioned active user
 - [ ] Expected 401/403 errors are handled in frontend UX
