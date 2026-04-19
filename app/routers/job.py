@@ -1,6 +1,3 @@
-from typing import cast
-from uuid import UUID
-
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,9 +28,7 @@ async def create_job(
     session: AsyncSession = Depends(get_async_session),
     user: AuthenticatedUser = Depends(current_active_user),
 ) -> ResponseEnvelope[JobResponse]:
-    # current_active_user guarantees internal_user_id is populated.
-    internal_user_id = cast(UUID, user.internal_user_id)
-    new_job = await job_service.create_job(session, job_in, internal_user_id)
+    new_job = await job_service.create_job(session, job_in, user.internal_user_id)
     background_tasks.add_task(generate_job_embeddings, job_id=new_job.id)
 
     return ResponseEnvelope[JobResponse](

@@ -50,9 +50,9 @@ async def current_active_user(
 
     if email is None:
         raise BaseAppException(
-            error_code="AUTH_USER_NOT_PROVISIONED",
-            message="Authenticated user is not provisioned in the backend.",
-            status_code=403,
+            error_code="AUTH_MISSING_EMAIL_CLAIM",
+            message="Authentication token is missing the required email claim.",
+            status_code=401,
         )
 
     result = await db.execute(select(User).where(User.email == email))
