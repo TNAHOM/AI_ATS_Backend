@@ -115,10 +115,10 @@ class GeminiService:
                     user_prompt
                 ],
                 config=types.GenerateContentConfig(
-                    system_instruction=system_instruction, 
+                    system_instruction=system_instruction,
                     response_mime_type="application/json",
-                    response_schema=ResumeData,            
-                    temperature=0.0,                       
+                    response_schema=ResumeData,
+                    temperature=0.0,
                 )
             )
 
@@ -130,11 +130,13 @@ class GeminiService:
             return ResumeData.model_validate_json(response.text)
 
         except ValidationError as ve:
-            logger.error(f"Schema validation failed for resume extraction. Details: {ve.errors()}")
+            logger.error(
+                f"Schema validation failed for resume extraction. Details: {ve.errors()}", exc_info=True)
             raise AIParseError("AI returned invalid resume format.") from ve
 
         except APIError as api_err:
-            logger.error("Gemini API error during resume extraction.", exc_info=True)
+            logger.error(
+                "Gemini API error during resume extraction.", exc_info=True)
             self._handle_api_error(api_err)
             raise
 
@@ -144,7 +146,7 @@ class GeminiService:
         except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.exception("Unexpected error in resume extraction.")
             raise AIServiceError("Resume extraction failed.") from e
-    
+
     async def grade_resume(
         self,
         resume_text: str,
@@ -181,11 +183,13 @@ class GeminiService:
             return ResumeGrade.model_validate_json(response.text)
 
         except ValidationError as ve:
-            logger.error("Schema validation failed for resume grading.")
+            logger.error(
+                "Schema validation failed for resume grading.", exc_info=True)
             raise AIParseError("AI returned invalid grading format.") from ve
 
         except APIError as api_err:
-            logger.error("Gemini API error during resume grading.", exc_info=True)
+            logger.error(
+                "Gemini API error during resume grading.", exc_info=True)
             self._handle_api_error(api_err)
             raise
 
@@ -214,13 +218,13 @@ class GeminiService:
 
         prompt = (
             "You are an ATS (Applicant Tracking System) evaluation assistant.\n"
-        "Your task is to analyze how well an applicant’s resume matches a job posting.\n"
-        "The system has already calculated numeric similarity scores.\n"
-        "You DO NOT calculate scores. Instead, you must generate:\n"
-        '- "strengths": reasons why the applicant is a good fit \n'
-        '- "weaknesses": reasons why the applicant may not be a good fit\n\n'
-        '- "score": a numeric score from 1 to 100(float number) indicating overall fit using the job post information and the applicant resume (higher is better)\n\n'
-        "Return STRICT valid JSON only.\n\n"
+            "Your task is to analyze how well an applicant’s resume matches a job posting.\n"
+            "The system has already calculated numeric similarity scores.\n"
+            "You DO NOT calculate scores. Instead, you must generate:\n"
+            '- "strengths": reasons why the applicant is a good fit \n'
+            '- "weaknesses": reasons why the applicant may not be a good fit\n\n'
+            '- "score": a numeric score from 1 to 100(float number) indicating overall fit using the job post information and the applicant resume (higher is better)\n\n'
+            "Return STRICT valid JSON only.\n\n"
             f"Job Description:\n{job_description.strip()}\n\n"
             f"Job Requirements:\n{requirements_text}\n\n"
             f"Job Responsibilities:\n{responsibilities_text}\n\n"
@@ -246,11 +250,13 @@ class GeminiService:
             return ResumeJobAnalysis.model_validate_json(response.text)
 
         except ValidationError as ve:
-            logger.error("Schema validation failed for resume-vs-job analysis.")
+            logger.error(
+                "Schema validation failed for resume-vs-job analysis.", exc_info=True)
             raise AIParseError("AI returned invalid analysis format.") from ve
 
         except APIError as api_err:
-            logger.error("Gemini API error during resume-vs-job analysis.", exc_info=True)
+            logger.error(
+                "Gemini API error during resume-vs-job analysis.", exc_info=True)
             self._handle_api_error(api_err)
             raise
 
@@ -273,7 +279,7 @@ class GeminiService:
         if getattr(api_err, "status_code", None) in (500, 502, 503, 504):
             # transient server error (retry handled by tenacity)
             return
- 
+
         raise AIServiceError("AI provider error.") from api_err
 
 

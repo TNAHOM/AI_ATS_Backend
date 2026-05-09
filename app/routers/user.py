@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+import logging
+from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_async_session
 from app.dependencies import current_superuser
 
@@ -8,12 +9,15 @@ from app.schemas.user import UserRead
 from app.services import users
 from app.models.user import UserType
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
 
+logger = logging.getLogger(__name__)
 
 user = APIRouter(
     prefix="/users",
     tags=["users"],
 )
+
 
 @user.get(
     "/all",
@@ -31,18 +35,25 @@ async def get_all_users(
     _current_user: AuthenticatedUser = Depends(current_superuser),
     db: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[list[UserRead]]:
-    users_list = await users.get_all_users(
-        db=db,
-        skip=skip,
-        limit=limit,
-        user_type=user_type,
-        is_verified=is_verified,
-        is_active=is_active,
-        is_superuser=is_superuser,
-    )
+    logger.info(f"Admin fetch users request. skip={skip}, limit={limit}")
+    try:
+        users_list = await users.get_all_users(
+            db=db,
+            skip=skip,
+            limit=limit,
+            user_type=user_type,
+            is_verified=is_verified,
+            is_active=is_active,
+            is_superuser=is_superuser,
+        )
 
-    return ResponseEnvelope[list[UserRead]](
-        success=True,
-        message="Users retrieved successfully.",
-        data=[UserRead.model_validate(user_item) for user_item in users_list],
-    )
+        return ResponseEnvelope[list[UserRead]](
+            success=True,
+            message="Users retrieved successfully.",
+            data=[UserRead.model_validate(user_item)
+                  for user_item in users_list],
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"Database error fetching users: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Database error fetching users")

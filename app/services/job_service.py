@@ -11,21 +11,23 @@ from app.models.job import Job
 from app.schemas.job import JobCreate
 logger = logging.getLogger(__name__)
 
+
 class JobService:
     async def create_job(self, db: AsyncSession, job_data: JobCreate, user_id: UUID) -> Job:
         try:
             db_job = Job(**job_data.model_dump(), user_id=user_id)
-            
+
             db.add(db_job)
             await db.commit()
             await db.refresh(db_job)
-            
+
             logger.info(f"User {user_id} created Job {db_job.id}")
             return db_job
-            
+
         except SQLAlchemyError as e:
             await db.rollback()
-            logger.error(f"Database error while creating job: {e}")
+            logger.error(
+                f"Database error while creating job: {e}", exc_info=True)
             raise BaseAppException(
                 error_code="JOB_CREATE_FAILED",
                 message="Failed to create job posting.",
@@ -49,11 +51,12 @@ class JobService:
 
             return jobs, total
         except SQLAlchemyError as e:
-            logger.error(f"Failed to fetch jobs: {e}")
+            logger.error(f"Failed to fetch jobs: {e}", exc_info=True)
             raise BaseAppException(
                 error_code="JOB_LIST_FAILED",
                 message="Could not retrieve jobs.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
 
 job_service = JobService()

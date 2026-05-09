@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 import json
 from json import JSONDecodeError
@@ -9,15 +10,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import BaseAppException
 from app.core.database import get_async_session
+from app.core.logging import setup_logging
 from app.routers import auth, user, job, job_applicant
 from app.schemas.common import MessageData, ResponseEnvelope, StatusData
+
+# Setup global colored logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # This is where you would put startup logic
+    logger.info("FastAPI application startup.")
     yield
     # This is where you would put shutdown logic
-    
+    logger.info("FastAPI application shutdown.")
+
 
 # TODO: in the future Depends(get_query_token)
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
@@ -110,12 +119,16 @@ async def wrap_auth_user_route_responses(request: Request, call_next):
         headers=response_headers,
     )
 
-# Converts custom, application-specific business logic errors (defined by the developer) into the API's standardized JSON error format. 
+# Converts custom, application-specific business logic errors (defined by the developer) into the API's standardized JSON error format.
+
+
 @app.exception_handler(BaseAppException)
 async def handle_base_app_exception(
     _request: Request,
     exc: BaseAppException,
 ) -> JSONResponse:
+    logger.warning(
+        f"BaseAppException occurred: {exc.message} [Code: {exc.error_code}]")
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -128,12 +141,17 @@ async def handle_base_app_exception(
     )
 
 # Intercepts generic FastAPI web errors (like 404 Not Found or 401 Unauthorized) to ensure they match the API's standard JSON structure rather than FastAPI's default.
+
+
 @app.exception_handler(HTTPException)
 async def handle_http_exception(
     _request: Request,
     exc: HTTPException,
 ) -> JSONResponse:
-    detail_message = exc.detail if isinstance(exc.detail, str) else "Request failed."
+    detail_message = exc.detail if isinstance(
+        exc.detail, str) else "Request failed."
+    logger.warning(
+        f"HTTPException occurred: {detail_message} [Status: {exc.status_code}]")
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -146,11 +164,14 @@ async def handle_http_exception(
     )
 
 # Formats bad user input errors (like missing fields or incorrect data types caught by Pydantic) into the standard JSON structure, exposing the exact field errors in the details section.
+
+
 @app.exception_handler(RequestValidationError)
 async def handle_validation_exception(
     _request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    logger.warning(f"Request validation error: {exc.errors()}")
     return JSONResponse(
         status_code=422,
         content={
@@ -161,6 +182,7 @@ async def handle_validation_exception(
             "details": {"errors": exc.errors()},
         },
     )
+
 
 @app.get(
     "/",
@@ -174,6 +196,7 @@ def read_root() -> ResponseEnvelope[MessageData]:
         message="Root endpoint reached.",
         data=MessageData(message="Welcome to my FastAPI app!"),
     )
+
 
 @app.get(
     "/db-test",

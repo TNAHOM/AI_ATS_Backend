@@ -102,18 +102,23 @@ class VectorSearchService:
 
                 ranked_results.append(
                     JobApplicantVectorResult(
-                        applicant=JobApplicantResponse.model_validate(applicant),
+                        applicant=JobApplicantResponse.model_validate(
+                            applicant),
                         similarity_score=round(weighted_similarity, 4),
                     )
                 )
 
-            ranked_results.sort(key=lambda item: item.similarity_score, reverse=True)
+            ranked_results.sort(
+                key=lambda item: item.similarity_score, reverse=True)
             return ranked_results[:top_k]
 
-        except BaseAppException:
+        except BaseAppException as exc:
+            logger.error(
+                "App exception explicitly caught in vector search", exc_info=True)
             raise
         except SQLAlchemyError as error:
-            logger.error("Database error during applicant vector search: %s", error)
+            logger.error(
+                "Database error during applicant vector search: %s", error, exc_info=True)
             raise BaseAppException(
                 error_code="VECTOR_SEARCH_FAILED",
                 message="Failed to rank applicants for the job.",

@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,11 +10,14 @@ from app.schemas.job import JobCreate, JobResponse
 from app.services.job_service import job_service
 from app.worker.jobs import generate_job_embeddings
 
+logger = logging.getLogger(__name__)
+
 # Define prefix and tags ONCE here
 router = APIRouter(
     prefix="/jobs",
     tags=["jobs"]
 )
+
 
 @router.post(
     "/",
@@ -28,6 +32,8 @@ async def create_job(
     session: AsyncSession = Depends(get_async_session),
     user: AuthenticatedUser = Depends(current_active_user),
 ) -> ResponseEnvelope[JobResponse]:
+    logger.info(
+        f"User {user.internal_user_id} is creating a new job: {job_in.title}")
     new_job = await job_service.create_job(session, job_in, user.internal_user_id)
     background_tasks.add_task(generate_job_embeddings, job_id=new_job.id)
 
@@ -36,6 +42,7 @@ async def create_job(
         message="Job created successfully.",
         data=JobResponse.model_validate(new_job),
     )
+
 
 @router.get(
     "/",
@@ -48,6 +55,7 @@ async def get_jobs(
     limit: int = 50,
     db: AsyncSession = Depends(get_async_session)
 ) -> ResponseEnvelope[list[JobResponse]]:
+    logger.info(f"Fetching jobs with skip={skip}, limit={limit}")
     jobs, _total = await job_service.get_jobs(db=db, skip=skip, limit=limit)
     return ResponseEnvelope[list[JobResponse]](
         success=True,

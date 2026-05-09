@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CLERK_AUDIENCE: str | None = None
     CLERK_JWKS_CACHE_TTL_SECONDS: int = 3600
     CLERK_JWT_LEEWAY_SECONDS: int = 10
+    CLERK_WEBHOOK_SECRET: str
 
     @model_validator(mode="after")
     def derive_clerk_jwks_url(self) -> Self:

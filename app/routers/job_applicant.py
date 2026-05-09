@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile, status
@@ -19,12 +20,13 @@ from app.services.job_applicant_service import job_applicant_service
 from app.services.vector_service import vector_search_service
 from app.worker.process_job_applicant import process_job_applicant
 
-
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/job-applicants",
     tags=["job-applicants"]
 )
+
 
 @router.post(
     "/",
@@ -43,6 +45,7 @@ async def create_job_applicant(
     resume: UploadFile = File(...),
     session: AsyncSession = Depends(get_async_session),
 ):
+    logger.info(f"Creating job applicant {email} for job {job_post_id}")
     job_applicant_in = JobApplicantCreate(
         job_post_id=job_post_id,
         name=name,
@@ -61,7 +64,8 @@ async def create_job_applicant(
         resume_content_type=resume.content_type,
     )
 
-    background_tasks.add_task(process_job_applicant, job_applicant_id=new_job_applicant.id, resume_bytes=resume_bytes)
+    background_tasks.add_task(
+        process_job_applicant, job_applicant_id=new_job_applicant.id, resume_bytes=resume_bytes)
     return ResponseEnvelope[JobApplicantResponse](
         success=True,
         message="Job applicant created successfully.",
@@ -86,6 +90,8 @@ async def retry_job_applicant(
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[JobApplicantResponse]:
+    logger.info(
+        f"Retrying application processing for applicant {applicant_id}")
     applicant, resume_bytes = await job_applicant_service.get_applicant_for_retry(
         db=session,
         applicant_id=applicant_id,
@@ -115,17 +121,28 @@ async def retry_job_applicant(
 )
 async def list_job_applicants(
     page: int = Query(default=1, ge=1, description="Page number (1-based)"),
-    size: int = Query(default=20, ge=1, le=100, description="Number of items per page"),
-    job_post_id: UUID | None = Query(default=None, description="Filter by job posting ID"),
-    progress_status: ProgressStatus | None = Query(default=None, description="Filter by recruiter progress status"),
-    seniority_level: SeniorityStatus | None = Query(default=None, description="Filter by declared seniority level"),
-    application_status: ApplicationStatus | None = Query(default=None, description="Filter by processing/application status"),
-    min_score: float | None = Query(default=None, ge=0, le=10, description="Minimum AI analysis score (0–10)"),
-    max_score: float | None = Query(default=None, ge=0, le=10, description="Maximum AI analysis score (0–10)"),
-    sort_by: JobApplicantSortField = Query(default=JobApplicantSortField.APPLIED_AT, description="Field to sort by"),
-    sort_order: SortOrder = Query(default=SortOrder.DESC, description="Sort direction"),
+    size: int = Query(default=20, ge=1, le=100,
+                      description="Number of items per page"),
+    job_post_id: UUID | None = Query(
+        default=None, description="Filter by job posting ID"),
+    progress_status: ProgressStatus | None = Query(
+        default=None, description="Filter by recruiter progress status"),
+    seniority_level: SeniorityStatus | None = Query(
+        default=None, description="Filter by declared seniority level"),
+    application_status: ApplicationStatus | None = Query(
+        default=None, description="Filter by processing/application status"),
+    min_score: float | None = Query(
+        default=None, ge=0, le=10, description="Minimum AI analysis score (0–10)"),
+    max_score: float | None = Query(
+        default=None, ge=0, le=10, description="Maximum AI analysis score (0–10)"),
+    sort_by: JobApplicantSortField = Query(
+        default=JobApplicantSortField.APPLIED_AT, description="Field to sort by"),
+    sort_order: SortOrder = Query(
+        default=SortOrder.DESC, description="Sort direction"),
     session: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[PaginatedPayload[JobApplicantResponse]]:
+    logger.info(
+        f"Listing job applicants (page={page}, size={size}, job_post_id={job_post_id})")
     applicants, total = await job_applicant_service.list_job_applicants(
         db=session,
         page=page,
@@ -164,6 +181,8 @@ async def rank_applicants_by_vector_similarity(
     top_k: int = Query(default=10, ge=1, le=100),
     session: AsyncSession = Depends(get_async_session),
 ):
+    logger.info(
+        f"Ranking applicants for job {job_post_id} with vector similarity (top_k={top_k})")
     ranked_applicants = await vector_search_service.rank_applicants_for_job(
         db=session,
         job_post_id=job_post_id,
@@ -192,9 +211,40 @@ async def get_job_applicant(
     applicant_id: UUID,
     session: AsyncSession = Depends(get_async_session),
 ) -> ResponseEnvelope[JobApplicantResponse]:
+    logger.info(f"Fetching job applicant {applicant_id}")
     applicant = await job_applicant_service.get_job_applicant(db=session, applicant_id=applicant_id)
     return ResponseEnvelope[JobApplicantResponse](
         success=True,
         message="Job applicant retrieved successfully.",
+        data=JobApplicantResponse.model_validate(applicant),
+    )
+
+
+@router.patch(
+    "/advance-applicant/{next_status_name}",
+    response_model=ResponseEnvelope[JobApplicantResponse],
+    dependencies=[Depends(current_active_user)],
+    summary="Advance applicant to next progress stage",
+    description=(
+        "Advances an applicant to the next allowed recruiter progress stage. "
+        "Provide applicant_id as a query parameter and the desired next status in the path."
+    ),
+)
+async def advance_job_applicant_status(
+    next_status_name: str,
+    applicant_id: UUID = Query(..., description="Applicant ID to advance"),
+    session: AsyncSession = Depends(get_async_session),
+) -> ResponseEnvelope[JobApplicantResponse]:
+    logger.info(
+        f"Advancing applicant {applicant_id} to status {next_status_name}")
+    applicant = await job_applicant_service.advance_applicant_progress_status(
+        db=session,
+        applicant_id=applicant_id,
+        next_status_name=next_status_name,
+    )
+
+    return ResponseEnvelope[JobApplicantResponse](
+        success=True,
+        message="Applicant progress status advanced successfully.",
         data=JobApplicantResponse.model_validate(applicant),
     )

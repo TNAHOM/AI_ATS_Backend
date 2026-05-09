@@ -9,7 +9,8 @@ class UserType(str, enum.Enum):
     ADMIN = "admin"
 class User(SQLModelBaseUserDB, table=True):
     user_type: UserType = Field(default=UserType.APPLICANT)
+    clerk_user_id: str = Field(unique=True, index=True)
     first_name: str
     last_name: str
-    phone_number: str = Field(max_items=12, min_items=9)
+    phone_number: str = Field(max_length=12, min_length=9)
     pass

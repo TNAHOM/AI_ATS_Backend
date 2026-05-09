@@ -92,7 +92,23 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
 
 ## Auth Endpoints (`/auth`)
 
-### 3) `GET /auth/authenticated-route`
+### 3) `POST /auth/login`
+
+- **Method:** `POST`
+- **Params:** None
+- **Request Body:** None
+- **Auth:** valid Clerk bearer JWT required (frontend-issued token)
+- **Success Response (200):** `ResponseEnvelope[AuthenticatedUser]`
+  - `data.clerk_id: string`
+  - `data.email: string`
+  - `data.internal_user_id: UUID`
+  - `data.is_active: boolean`
+  - `data.is_superuser: boolean`
+- **Error Responses:**
+  - `401` invalid/missing/expired token
+  - `403` inactive or unprovisioned backend user
+
+### 4) `GET /auth/authenticated-route`
 
 - **Method:** `GET`
 - **Params:** None
@@ -107,7 +123,7 @@ For routes under `/auth` and `/users`, responses are runtime-wrapped into the sa
 
 ## User Endpoints (`/users`)
 
-### 4) `GET /users/all`
+### 5) `GET /users/all`
 
 - **Method:** `GET`
 - **Query Params:**

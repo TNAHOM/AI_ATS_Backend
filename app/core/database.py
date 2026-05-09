@@ -7,7 +7,11 @@ from app.core.config import settings
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-engine = create_async_engine(settings.DB_URL)
+engine = create_async_engine(
+    settings.DB_URL,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
 
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 

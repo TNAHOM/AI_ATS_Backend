@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 
 class JobApplicantService:
+    _NEXT_PROGRESS_STATUS: dict[ProgressStatus, ProgressStatus] = {
+        ProgressStatus.APPLIED: ProgressStatus.SHORTLISTED,
+        ProgressStatus.SHORTLISTED: ProgressStatus.INTERVIEWING,
+        ProgressStatus.INTERVIEWING: ProgressStatus.HIRED,
+    }
+
     async def create_job_applicant(
         self,
         db: AsyncSession,
@@ -36,7 +42,8 @@ class JobApplicantService:
 
         normalized_name = resume_filename.lower()
         is_pdf_name = normalized_name.endswith(".pdf")
-        is_pdf_type = resume_content_type in {"application/pdf", "application/x-pdf"}
+        is_pdf_type = resume_content_type in {
+            "application/pdf", "application/x-pdf"}
         if not is_pdf_name and not is_pdf_type:
             raise BaseAppException(
                 error_code="INVALID_RESUME_FORMAT",
@@ -79,7 +86,8 @@ class JobApplicantService:
             await db.commit()
             await db.refresh(job_applicant)
 
-            logger.info("Successfully created job applicant with ID: %s", job_applicant.id)
+            logger.info(
+                "Successfully created job applicant with ID: %s", job_applicant.id)
             return job_applicant
 
         except S3ServiceError as e:
@@ -93,7 +101,8 @@ class JobApplicantService:
             try:
                 await db.rollback()
             except SQLAlchemyError as rollback_error:
-                logger.warning("Rollback failed after IntegrityError: %s", type(rollback_error).__name__)
+                logger.warning("Rollback failed after IntegrityError: %s", type(
+                    rollback_error).__name__)
             # Best-effort cleanup of uploaded resume on DB integrity errors
             if s3_path:
                 try:
@@ -106,7 +115,8 @@ class JobApplicantService:
             # str(e) (SQLAlchemy exception) always contains the full error text
             # including the constraint name, unlike str(e.orig) which may be
             # empty when using the asyncpg driver.
-            constraint = getattr(getattr(e.orig, "diag", None), "constraint_name", None)
+            constraint = getattr(
+                getattr(e.orig, "diag", None), "constraint_name", None)
             error_text = constraint if constraint else str(e)
             if "uq_job_applicant_job_post_email" in error_text:
                 logger.warning(
@@ -119,7 +129,8 @@ class JobApplicantService:
                     message="An application for this job with the same email already exists.",
                     status_code=status.HTTP_409_CONFLICT,
                 )
-            logger.error("Integrity constraint violation while creating job applicant: %s", type(e).__name__)
+            logger.error(
+                "Integrity constraint violation while creating job applicant: %s", type(e).__name__)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_CREATE_FAILED",
                 message="Failed to create job applicant due to a data constraint violation.",
@@ -129,7 +140,8 @@ class JobApplicantService:
             try:
                 await db.rollback()
             except SQLAlchemyError as rollback_error:
-                logger.warning("Rollback failed after SQLAlchemyError: %s", type(rollback_error).__name__)
+                logger.warning("Rollback failed after SQLAlchemyError: %s", type(
+                    rollback_error).__name__)
             # Best-effort cleanup of uploaded resume on general DB errors
             if s3_path:
                 try:
@@ -139,7 +151,8 @@ class JobApplicantService:
                         "Failed to delete orphaned resume from S3 after SQLAlchemyError: %s",
                         cleanup_error,
                     )
-            logger.error("Database error while creating job applicant: %s: %s", type(e).__name__, str(e))
+            logger.error("Database error while creating job applicant: %s: %s", type(
+                e).__name__, str(e), exc_info=True)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_CREATE_FAILED",
                 message="Failed to create job applicant.",
@@ -164,7 +177,8 @@ class JobApplicantService:
             )
             job_applicant = result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error("Database error fetching applicant %s for retry: %s", applicant_id, e)
+            logger.error("Database error fetching applicant %s for retry: %s",
+                         applicant_id, e, exc_info=True)
             raise BaseAppException(
                 error_code="APPLICANT_FETCH_FAILED",
                 message="Failed to retrieve job applicant.",
@@ -178,7 +192,8 @@ class JobApplicantService:
                 status_code=status.HTTP_404_NOT_FOUND,
             )
 
-        retryable_statuses = {ApplicationStatus.FAILED, ApplicationStatus.DEAD_LETTER}
+        retryable_statuses = {ApplicationStatus.FAILED,
+                              ApplicationStatus.DEAD_LETTER}
         if job_applicant.application_status not in retryable_statuses:
             raise BaseAppException(
                 error_code="APPLICANT_NOT_RETRYABLE",
@@ -195,7 +210,8 @@ class JobApplicantService:
                 error_code="APPLICANT_ALREADY_PROCESSING",
                 message="Job applicant is currently being processed; retry is not allowed until processing completes.",
                 status_code=status.HTTP_409_CONFLICT,
-                details={"processing_status": job_applicant.processing_status.value},
+                details={
+                    "processing_status": job_applicant.processing_status.value},
             )
 
         if not job_applicant.s3_path:
@@ -230,7 +246,8 @@ class JobApplicantService:
             await db.refresh(job_applicant)
         except SQLAlchemyError as e:
             await db.rollback()
-            logger.error("Database error resetting applicant %s for retry: %s", applicant_id, e)
+            logger.error("Database error resetting applicant %s for retry: %s",
+                         applicant_id, e, exc_info=True)
             raise BaseAppException(
                 error_code="APPLICANT_RETRY_RESET_FAILED",
                 message="Failed to reset applicant state for retry.",
@@ -250,7 +267,8 @@ class JobApplicantService:
             result = await db.execute(select(JobApplicant).where(columns.id == applicant_id))
             applicant = result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error("Database error while fetching applicant %s: %s", applicant_id, e)
+            logger.error("Database error while fetching applicant %s: %s",
+                         applicant_id, e, exc_info=True)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_FETCH_FAILED",
                 message="Failed to retrieve job applicant.",
@@ -263,6 +281,94 @@ class JobApplicantService:
                 message="Job applicant not found.",
                 status_code=status.HTTP_404_NOT_FOUND,
             )
+        return applicant
+
+    async def advance_applicant_progress_status(
+        self,
+        db: AsyncSession,
+        *,
+        applicant_id: UUID,
+        next_status_name: str,
+    ) -> JobApplicant:
+        """Advance applicant progress status to the expected next stage."""
+        normalized_status = next_status_name.strip().upper()
+        try:
+            next_status = ProgressStatus(normalized_status)
+        except ValueError:
+            allowed_values = [status.value for status in ProgressStatus]
+            raise BaseAppException(
+                error_code="INVALID_PROGRESS_STATUS",
+                message="Invalid progress status value.",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                details={"allowed_statuses": allowed_values},
+            )
+
+        columns = inspect(JobApplicant).c
+        try:
+            result = await db.execute(select(JobApplicant).where(columns.id == applicant_id))
+            applicant = result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error("Database error while fetching applicant %s for status advance: %s",
+                         applicant_id, e, exc_info=True)
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_FETCH_FAILED",
+                message="Failed to retrieve job applicant.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if applicant is None:
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_NOT_FOUND",
+                message="Job applicant not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+            )
+
+        if applicant.progress_status in {ProgressStatus.HIRED, ProgressStatus.REJECTED}:
+            raise BaseAppException(
+                error_code="PROGRESS_STATUS_TERMINAL",
+                message="Cannot advance progress status from a terminal stage.",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"current_status": applicant.progress_status.value},
+            )
+
+        expected_next = self._NEXT_PROGRESS_STATUS.get(
+            applicant.progress_status)
+        if expected_next is None:
+            raise BaseAppException(
+                error_code="PROGRESS_STATUS_TRANSITION_UNSUPPORTED",
+                message="Current progress status does not support advancement.",
+                status_code=status.HTTP_409_CONFLICT,
+                details={"current_status": applicant.progress_status.value},
+            )
+
+        if next_status != expected_next:
+            raise BaseAppException(
+                error_code="INVALID_PROGRESS_TRANSITION",
+                message="The requested status is not the next allowed transition.",
+                status_code=status.HTTP_409_CONFLICT,
+                details={
+                    "current_status": applicant.progress_status.value,
+                    "expected_next_status": expected_next.value,
+                    "requested_next_status": next_status.value,
+                },
+            )
+
+        applicant.progress_status = next_status
+
+        try:
+            db.add(applicant)
+            await db.commit()
+            await db.refresh(applicant)
+        except SQLAlchemyError as e:
+            await db.rollback()
+            logger.error("Database error while updating applicant %s status: %s",
+                         applicant_id, e, exc_info=True)
+            raise BaseAppException(
+                error_code="JOB_APPLICANT_STATUS_UPDATE_FAILED",
+                message="Failed to advance applicant progress status.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
         return applicant
 
     async def list_job_applicants(
@@ -324,7 +430,8 @@ class JobApplicantService:
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        order_expr = nullslast(desc(raw_sort_col)) if sort_order == SortOrder.DESC else nullslast(asc(raw_sort_col))
+        order_expr = nullslast(desc(
+            raw_sort_col)) if sort_order == SortOrder.DESC else nullslast(asc(raw_sort_col))
 
         list_query = select(JobApplicant)
         count_query = select(func.count()).select_from(JobApplicant)
@@ -342,7 +449,8 @@ class JobApplicantService:
             count_result = await db.execute(count_query)
             total = int(count_result.scalar_one())
         except SQLAlchemyError as e:
-            logger.error("Database error while listing applicants: %s", e)
+            logger.error(
+                "Database error while listing applicants: %s", e, exc_info=True)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_LIST_FAILED",
                 message="Failed to retrieve job applicants.",
