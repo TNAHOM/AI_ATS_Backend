@@ -38,11 +38,14 @@ class ClerkUserData(BaseModel):
     primary_email_address_id: Optional[str] = None
     primary_phone_number_id: Optional[str] = None
 
-    email_addresses: list[ClerkEmailAddress] = Field(default_factory=list)
-    phone_numbers: list[ClerkPhoneNumber] = Field(default_factory=list)
+    email_addresses: Optional[list[ClerkEmailAddress]
+                              ] = Field(default_factory=list)
+    phone_numbers: Optional[list[ClerkPhoneNumber]
+                            ] = Field(default_factory=list)
 
-    public_metadata: dict[str, Any] = Field(default_factory=dict)
-    private_metadata: dict[str, Any] = Field(default_factory=dict)
+    public_metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    private_metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
+    unsafe_metadata: Optional[dict[str, Any]] = Field(default_factory=dict)
 
     created_at: Optional[int] = None
     updated_at: Optional[int] = None

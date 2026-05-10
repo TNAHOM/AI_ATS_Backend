@@ -13,6 +13,7 @@ from app.core.database import get_async_session
 from app.core.logging import setup_logging
 from app.routers import auth, user, job, job_applicant
 from app.schemas.common import MessageData, ResponseEnvelope, StatusData
+from app.routers.webhooks import webhook_router
 
 # Setup global colored logging
 setup_logging()
@@ -34,6 +35,7 @@ app.include_router(auth.auth)
 app.include_router(user.user)
 app.include_router(job.router)
 app.include_router(job_applicant.router)
+app.include_router(webhook_router)
 
 
 def _is_standard_envelope(payload: object) -> bool:

@@ -76,7 +76,7 @@ async def get_all_users(
         return list(result.scalars().all())
 
     except SQLAlchemyError as exc:
-        logger.error("Database error retrieving users", exc_info=True)
+        logger.error("Database error retrieving users: %s", exc, exc_info=True)
         raise BaseAppException(
             error_code="USER_LIST_FAILED",
             message="Could not retrieve users.",
@@ -136,7 +136,7 @@ async def upsert_user(
         except IntegrityError as exc:
             await db.rollback()
             logger.error(
-                "Integrity error while creating user, likely created concurrently. Details: {exc}", exc_info=True)
+                "Integrity error while creating user, likely created concurrently. Details: %s", exc, exc_info=True)
             # Fetch the user the other process just created
             result = await db.execute(select(User).where(col(User.clerk_user_id) == clerk_id))
             return result.scalar_one()

@@ -21,7 +21,7 @@ from pydantic import ValidationError
 logger = logging.getLogger(__name__)
 
 auth = APIRouter(prefix="/auth", tags=["auth"])
-webhook_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+webhook_router = APIRouter(prefix="/auth/webhooks", tags=["webhooks"])
 
 # ==========================================
 # AUTH ENDPOINTS

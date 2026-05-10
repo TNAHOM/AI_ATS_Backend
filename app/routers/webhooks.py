@@ -34,8 +34,13 @@ async def clerk_webhook(request: Request, db: AsyncSession = Depends(get_async_s
     # 1. Validate Svix signature
     try:
         wh = Webhook(secret)
-        event = wh.verify(payload, dict(headers))
-    except WebhookVerificationError:
+        event = wh.verify(payload, {
+            "svix-id": headers.get("svix-id", ""),
+            "svix-signature": headers.get("svix-signature", ""),
+            "svix-timestamp": headers.get("svix-timestamp", ""),
+        })
+    except WebhookVerificationError as e:
+        logger.error(f"Signature verification failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     # 2. Get the Unique Svix ID
@@ -71,7 +76,6 @@ async def clerk_webhook(request: Request, db: AsyncSession = Depends(get_async_s
         email = None
         email_addresses = getattr(data, "email_addresses", None) or []
         primary_email_id = getattr(data, "primary_email_address_id", None)
-
         for e in email_addresses:
             if e.id == primary_email_id:
                 email = e.email_address

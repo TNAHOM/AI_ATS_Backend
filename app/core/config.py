@@ -3,6 +3,7 @@ from typing import Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI ATS Backend"
     # This will look for a variable named DB_URL in your .env file
@@ -29,4 +30,5 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-settings = Settings() # type: ignore
+
+settings = Settings()  # type: ignore
