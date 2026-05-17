@@ -1,11 +1,13 @@
 import logging
+from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.exceptions import BaseAppException
 from app.dependencies import current_active_user
 from app.schemas.auth import AuthenticatedUser
-from app.schemas.common import ResponseEnvelope
+from app.schemas.common import ResponseEnvelope, ResponseMeta
 from app.schemas.job import JobCreate, JobResponse
 from app.services.job_service import job_service
 from app.worker.jobs import generate_job_embeddings
@@ -56,9 +58,39 @@ async def get_jobs(
     db: AsyncSession = Depends(get_async_session)
 ) -> ResponseEnvelope[list[JobResponse]]:
     logger.info(f"Fetching jobs with skip={skip}, limit={limit}")
-    jobs, _total = await job_service.get_jobs(db=db, skip=skip, limit=limit)
+    jobs, total_count = await job_service.get_jobs(db=db, skip=skip, limit=limit)
     return ResponseEnvelope[list[JobResponse]](
         success=True,
         message="Jobs fetched successfully.",
         data=[JobResponse.model_validate(job) for job in jobs],
+        meta=ResponseMeta(
+            total=total_count,
+            skip=skip,
+            limit=limit
+        )
+    )
+
+
+@router.get(
+    "/{job_id}",
+    response_model=ResponseEnvelope[JobResponse],
+    summary="Get job by ID",
+    description="Returns a specific job by its ID."
+)
+async def get_job_by_id(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_async_session)
+) -> ResponseEnvelope[JobResponse]:
+    logger.info(f"Fetching job with ID: {job_id}")
+    job = await job_service.get_job_by_id(db=db, job_id=job_id)
+    if not job:
+        raise BaseAppException(
+            error_code="JOB_NOT_FOUND",
+            message="Job not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return ResponseEnvelope[JobResponse](
+        success=True,
+        message="Job fetched successfully.",
+        data=JobResponse.model_validate(job),
     )

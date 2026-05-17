@@ -4,10 +4,12 @@ import logging
 import asyncio
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
+from pydantic import HttpUrl
 from app.core.config import settings
 from app.core.exceptions import S3ServiceError
 
 logger = logging.getLogger(__name__)
+
 
 class S3Service:
     def __init__(self):
@@ -21,7 +23,8 @@ class S3Service:
             self.bucket_name = settings.S3_BUCKET_NAME
         except (ClientError, BotoCoreError, TypeError, ValueError) as e:
             logger.error(f"Failed to initialize Boto3 client: {e}")
-            raise S3ServiceError("Storage service initialization failed.") from e
+            raise S3ServiceError(
+                "Storage service initialization failed.") from e
 
     async def upload_document(self, file_bytes: bytes, original_filename: str, content_type: str = "application/pdf") -> str:
         """
@@ -29,9 +32,10 @@ class S3Service:
         Returns the unique S3 object key (not the full URL).
         """
         # Generate a unique safe filename to prevent overwrites
-        extension = original_filename.split('.')[-1] if '.' in original_filename else 'pdf'
+        extension = original_filename.split(
+            '.')[-1] if '.' in original_filename else 'pdf'
         unique_key = f"{uuid.uuid4().hex}.{extension}"
-        
+
         # Convert bytes to a file-like object
         file_obj = io.BytesIO(file_bytes)
 
@@ -42,11 +46,12 @@ class S3Service:
                 Bucket=self.bucket_name,
                 Key=unique_key,
                 ExtraArgs={
-                    "ContentType": content_type, # CRITICAL: Tells browser to render, not download
-                    "ContentDisposition": "inline" 
+                    "ContentType": content_type,  # CRITICAL: Tells browser to render, not download
+                    "ContentDisposition": "inline"
                 }
             )
-            logger.info(f"Successfully uploaded {original_filename} as {unique_key} to S3.")
+            logger.info(
+                f"Successfully uploaded {original_filename} as {unique_key} to S3.")
             return unique_key
 
         except (ClientError, BotoCoreError) as e:
@@ -54,7 +59,8 @@ class S3Service:
             raise S3ServiceError("Failed to upload document to storage.")
         except (TypeError, ValueError, OSError, RuntimeError) as e:
             logger.exception(f"Unexpected error during S3 upload: {str(e)}")
-            raise S3ServiceError("An internal error occurred during upload.") from e
+            raise S3ServiceError(
+                "An internal error occurred during upload.") from e
 
     async def download_document(self, s3_key: str) -> bytes:
         """
@@ -73,8 +79,41 @@ class S3Service:
             logger.error(f"AWS S3 Download Error for key '{s3_key}': {str(e)}")
             raise S3ServiceError("Failed to download document from storage.")
         except (TypeError, ValueError, OSError, RuntimeError) as e:
-            logger.exception(f"Unexpected error during S3 download for key '{s3_key}': {str(e)}")
-            raise S3ServiceError("An internal error occurred during download.") from e
+            logger.exception(
+                f"Unexpected error during S3 download for key '{s3_key}': {str(e)}")
+            raise S3ServiceError(
+                "An internal error occurred during download.") from e
+
+    async def generate_presigned_url(self, s3_key: str, original_filename: str, expires_in: int = 900) -> HttpUrl:
+        """
+        Generates a pre-signed URL for temporary secure access to an S3 object.
+        """
+        try:
+            # generate_presigned_url is CPU-bound (local cryptography), but running in to_thread
+            # keeps it consistent with the rest of your async service methods.
+            url = await asyncio.to_thread(
+                self.s3_client.generate_presigned_url,
+                ClientMethod='get_object',
+                Params={
+                    'Bucket': self.bucket_name,
+                    'Key': s3_key,
+                    'ResponseContentDisposition': f'inline; filename="{original_filename}"',
+                    'ResponseContentType': 'application/pdf'
+                },
+                ExpiresIn=expires_in
+            )
+            logger.info(f"Generated pre-signed URL for S3 object '{s3_key}'.")
+            return HttpUrl(url)
+
+        except (ClientError, BotoCoreError) as e:
+            logger.error(
+                f"AWS S3 Presigned URL Error for key '{s3_key}': {str(e)}")
+            raise S3ServiceError("Failed to generate secure document link.")
+        except (TypeError, ValueError, OSError, RuntimeError) as e:
+            logger.exception(
+                f"Unexpected error generating presigned URL for key '{s3_key}': {str(e)}")
+            raise S3ServiceError(
+                "An internal error occurred while generating the link.") from e
 
     async def delete_document(self, s3_key: str) -> None:
         """
@@ -93,8 +132,10 @@ class S3Service:
             logger.error(f"AWS S3 Delete Error for key '{s3_key}': {str(e)}")
             raise S3ServiceError("Failed to delete document from storage.")
         except (TypeError, ValueError, OSError, RuntimeError) as e:
-            logger.exception(f"Unexpected error during S3 delete for key '{s3_key}': {str(e)}")
-            raise S3ServiceError("An internal error occurred during delete.") from e
+            logger.exception(
+                f"Unexpected error during S3 delete for key '{s3_key}': {str(e)}")
+            raise S3ServiceError(
+                "An internal error occurred during delete.") from e
 
 
 s3_service = S3Service()

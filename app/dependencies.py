@@ -1,3 +1,5 @@
+import os
+
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -17,7 +19,6 @@ bearer_scheme = HTTPBearer(auto_error=False)
 async def verify_clerk_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> VerifiedClerkToken:
-
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise BaseAppException(
             error_code="AUTH_MISSING_BEARER_TOKEN",
@@ -25,7 +26,26 @@ async def verify_clerk_token(
             status_code=401,
         )
 
-    payload = await clerk_jwt_verifier.verify(credentials.credentials)
+    token = credentials.credentials
+
+    # ==========================================
+    # DEV BACKDOOR FOR SWAGGER UI
+    # ==========================================
+    env = os.getenv("ENVIRONMENT", "development").lower()
+    dev_token = os.getenv("DEV_BACKDOOR_TOKEN")
+    # print(f"Debug ENV: {env}, Received Token: {token}, Dev Token: {dev_token}")
+    # STRICT SAFETY: Only works if token matches AND we are explicitly NOT in production
+    if env != "production" and env != "prod" and dev_token and token == dev_token:
+        print("⚠️ USING DEV BACKDOOR TOKEN ⚠️")
+        return VerifiedClerkToken(
+            clerk_id="dev_mock_admin_123",  # Fake Clerk ID
+            email="admin@dev.local",       # Fake Email
+            metadata={"role": "admin"}     # Gives you superuser access!
+        )
+    # ==========================================
+
+    # --- NORMAL CLERK PRODUCTION VERIFICATION ---
+    payload = await clerk_jwt_verifier.verify(token)
 
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
@@ -46,11 +66,7 @@ async def verify_clerk_token(
         raise BaseAppException(error_code="AUTH_MISSING_EMAIL_CLAIM",
                                message="Token is missing email claim.", status_code=401)
 
-    return VerifiedClerkToken(
-        clerk_id=subject,
-        email=email,
-        metadata=payload.get("metadata", {})
-    )
+    return VerifiedClerkToken(clerk_id=subject, email=email, metadata=payload.get("metadata", {}))
 
 
 # 2. Update existing dependency to use the verified token

@@ -1,19 +1,23 @@
+from app.routers.webhooks import webhook_router
+from app.schemas.common import MessageData, ResponseEnvelope, StatusData
+from app.routers import auth, user, job, job_applicant
+from app.core.logging import setup_logging
+from app.core.database import get_async_session
+from app.core.config import settings
+from app.core.exceptions import BaseAppException
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi import FastAPI, Depends, HTTPException, Request
 import logging
 from contextlib import asynccontextmanager
 import json
 from json import JSONDecodeError
+from fastapi.middleware.cors import CORSMiddleware
 
-from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.config import settings
-from app.core.exceptions import BaseAppException
-from app.core.database import get_async_session
-from app.core.logging import setup_logging
-from app.routers import auth, user, job, job_applicant
-from app.schemas.common import MessageData, ResponseEnvelope, StatusData
-from app.routers.webhooks import webhook_router
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Setup global colored logging
 setup_logging()
@@ -36,6 +40,20 @@ app.include_router(user.user)
 app.include_router(job.router)
 app.include_router(job_applicant.router)
 app.include_router(webhook_router)
+
+
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _is_standard_envelope(payload: object) -> bool:

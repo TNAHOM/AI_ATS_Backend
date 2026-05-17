@@ -385,37 +385,47 @@ class JobApplicantService:
         max_score: float | None = None,
         sort_by: JobApplicantSortField = JobApplicantSortField.APPLIED_AT,
         sort_order: SortOrder = SortOrder.DESC,
-    ) -> tuple[Sequence[JobApplicant], int]:
+    ) -> tuple[Sequence[JobApplicant], int, dict[ProgressStatus, int]]:  # 👈 Added dict return type
         """
-        Return a paginated, filtered, and sorted list of job applicants.
-
-        Filters: job_post_id, progress_status, seniority_level, application_status,
-                 min_score / max_score (based on AI analysis.score, 0-10 scale).
-        Sorting: applied_at | name | score  ×  asc | desc  (nulls always last).
-        Pagination: 1-based page + size.
+        Return a paginated list, total count, and a dictionary of counts grouped by progress_status.
         """
         columns = inspect(JobApplicant).c
-        # Extract analysis.score as text from JSON and cast to Float.
-        # json_extract_path_text returns NULL when analysis is NULL or the key is
-        # missing, which integrates correctly with nullslast().
         score_col: ColumnElement[float | None] = cast(
             func.json_extract_path_text(columns.analysis, "score"),
             Float,
         )
 
-        conditions: list[ColumnElement[bool]] = []
+        # 1. Base conditions (Exclude progress_status)
+        # We exclude progress_status here so we can count ALL applicants for the job
+        # across different statuses (useful for UI tabs).
+        base_conditions: list[ColumnElement[bool]] = []
         if job_post_id is not None:
-            conditions.append(columns.job_post_id == job_post_id)
-        if progress_status is not None:
-            conditions.append(columns.progress_status == progress_status)
+            base_conditions.append(columns.job_post_id == job_post_id)
         if seniority_level is not None:
-            conditions.append(columns.seniority_level == seniority_level)
+            base_conditions.append(columns.seniority_level == seniority_level)
         if application_status is not None:
-            conditions.append(columns.application_status == application_status)
+            base_conditions.append(
+                columns.application_status == application_status)
         if min_score is not None:
-            conditions.append(score_col >= min_score)
+            base_conditions.append(score_col >= min_score)
         if max_score is not None:
-            conditions.append(score_col <= max_score)
+            base_conditions.append(score_col <= max_score)
+
+        # 2. Build the Status Count Query
+        status_count_query = (
+            select(columns.progress_status, func.count())
+            .select_from(JobApplicant)
+        )
+        if base_conditions:
+            status_count_query = status_count_query.where(*base_conditions)
+
+        status_count_query = status_count_query.group_by(
+            JobApplicant.progress_status)
+
+        # 3. List conditions (Base conditions + progress_status)
+        list_conditions = list(base_conditions)
+        if progress_status is not None:
+            list_conditions.append(columns.progress_status == progress_status)
 
         sort_col_map: dict[JobApplicantSortField, ColumnElement[Any]] = {
             JobApplicantSortField.APPLIED_AT: columns.applied_at,
@@ -434,10 +444,8 @@ class JobApplicantService:
             raw_sort_col)) if sort_order == SortOrder.DESC else nullslast(asc(raw_sort_col))
 
         list_query = select(JobApplicant)
-        count_query = select(func.count()).select_from(JobApplicant)
-        if conditions:
-            list_query = list_query.where(*conditions)
-            count_query = count_query.where(*conditions)
+        if list_conditions:
+            list_query = list_query.where(*list_conditions)
 
         offset = (page - 1) * size
         list_query = list_query.order_by(order_expr).offset(offset).limit(size)
@@ -446,18 +454,40 @@ class JobApplicantService:
             result = await db.execute(list_query)
             applicants = result.scalars().all()
 
-            count_result = await db.execute(count_query)
-            total = int(count_result.scalar_one())
+            # Execute Group By Query
+            status_count_result = await db.execute(status_count_query)
+            raw_counts = status_count_result.all()
+
+            # 5. Populate standard counts dictionary (ensuring all enum values exist, defaulting to 0)
+            status_counts = {status: 0 for status in ProgressStatus}
+
+            for status_key, count in raw_counts:
+                # Map database strings to Enum if necessary
+                if isinstance(status_key, str):
+                    try:
+                        status_key = ProgressStatus(status_key)
+                    except ValueError:
+                        continue
+
+                if status_key in status_counts:
+                    status_counts[status_key] = count
+
+            # 6. Determine Total count based on current filter without running a 3rd query
+            if progress_status is not None:
+                total = status_counts.get(progress_status, 0)
+            else:
+                total = sum(status_counts.values())
+
         except SQLAlchemyError as e:
-            logger.error(
-                "Database error while listing applicants: %s", e, exc_info=True)
+            logger.error("Database error while listing applicants: %s",
+                         e, exc_info=True)
             raise BaseAppException(
                 error_code="JOB_APPLICANT_LIST_FAILED",
                 message="Failed to retrieve job applicants.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        return applicants, total
+        return applicants, total, status_counts
 
 
 job_applicant_service = JobApplicantService()

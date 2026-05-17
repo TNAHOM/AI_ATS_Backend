@@ -5,7 +5,7 @@ import enum
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 from app.models.job_applicant import (
     ProgressStatus,
@@ -32,7 +32,8 @@ class ApplicantAnalysis(BaseModel):
 
 
 class JobApplicantCreate(BaseModel):
-    model_config = ConfigDict(from_attributes=True, extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(from_attributes=True,
+                              extra="forbid", str_strip_whitespace=True)
 
     job_post_id: UUID
     name: str
@@ -41,25 +42,25 @@ class JobApplicantCreate(BaseModel):
     seniority_level: Optional[SeniorityStatus] = None
 
 
-
-#TODO: NEED to fx this issue when i implement the update endpoint for job applicant.
+# TODO: NEED to fx this issue when i implement the update endpoint for job applicant.
 class JobApplicantUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
-    
+
     # Status Updates
     progress_status: Optional[ProgressStatus] = None
     seniority_level: Optional[SeniorityStatus] = None
     application_status: Optional[ApplicationStatus] = None
-    
+
     s3_path: Optional[str] = None
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
     extracted_data: Optional[Dict[str, Any]] = None
     embedded_value: Optional[List[float]] = None
+
 
 class JobApplicantResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -80,7 +81,8 @@ class JobApplicantResponse(BaseModel):
     analysis: Optional[ApplicantAnalysis] = None
     failed_reason: Optional[str] = None
     retry_count: int = 0
-    applied_at: datetime.datetime = Field(..., description="Timestamp when the application was submitted")
+    applied_at: datetime.datetime = Field(
+        ..., description="Timestamp when the application was submitted")
 
 
 class JobApplicantVectorResult(BaseModel):
@@ -96,3 +98,7 @@ class JobApplicantVectorSearchData(BaseModel):
     job_post_id: UUID
     total_candidates: int
     ranked_applicants: List[JobApplicantVectorResult]
+
+
+class ResumeUrlData(BaseModel):
+    url: HttpUrl

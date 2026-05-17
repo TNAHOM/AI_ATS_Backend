@@ -1,24 +1,26 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import EmailStr
 
 from app.core.database import get_async_session
 from app.dependencies import current_active_user
 from app.models.job_applicant import ApplicationStatus, ProgressStatus, SeniorityStatus
-from app.schemas.common import PaginatedPayload, ResponseEnvelope
+from app.schemas.common import PaginatedPayload, ResponseEnvelope, ResponseMeta
 from app.schemas.job_applicant import (
     JobApplicantCreate,
     JobApplicantResponse,
     JobApplicantSortField,
     JobApplicantVectorSearchData,
+    ResumeUrlData,
     SortOrder,
 )
 from app.services.job_applicant_service import job_applicant_service
 from app.services.vector_service import vector_search_service
 from app.worker.process_job_applicant import process_job_applicant
+from app.services.aws_service import s3_service
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ router = APIRouter(
 
 
 @router.post(
-    "/",
+    "",
     response_model=ResponseEnvelope[JobApplicantResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create a new job applicant",
@@ -109,7 +111,7 @@ async def retry_job_applicant(
 
 
 @router.get(
-    "/",
+    "",
     response_model=ResponseEnvelope[PaginatedPayload[JobApplicantResponse]],
     dependencies=[Depends(current_active_user)],
     summary="List job applicants",
@@ -143,7 +145,7 @@ async def list_job_applicants(
 ) -> ResponseEnvelope[PaginatedPayload[JobApplicantResponse]]:
     logger.info(
         f"Listing job applicants (page={page}, size={size}, job_post_id={job_post_id})")
-    applicants, total = await job_applicant_service.list_job_applicants(
+    applicants, total, status_counts = await job_applicant_service.list_job_applicants(
         db=session,
         page=page,
         size=size,
@@ -163,8 +165,14 @@ async def list_job_applicants(
         data=PaginatedPayload[JobApplicantResponse](
             items=[JobApplicantResponse.model_validate(a) for a in applicants],
             total=total,
-            page=page,
             size=size,
+            page=page,
+            status_counts=status_counts,
+        ),
+        meta=ResponseMeta(
+            total=total,
+            skip=(page - 1) * size,
+            limit=size,
         ),
     )
 
@@ -247,4 +255,42 @@ async def advance_job_applicant_status(
         success=True,
         message="Applicant progress status advanced successfully.",
         data=JobApplicantResponse.model_validate(applicant),
+    )
+
+
+@router.get(
+    "/{applicant_id}/resume-url",
+    response_model=ResponseEnvelope[ResumeUrlData],
+    dependencies=[Depends(current_active_user)],
+    summary="Get a secure viewing URL for the applicant's resume",
+    description="Generates a 15-minute pre-signed S3 URL to securely view the applicant's PDF resume in the browser.",
+)
+async def get_applicant_resume_url(
+    applicant_id: UUID,
+    session: AsyncSession = Depends(get_async_session),
+) -> ResponseEnvelope[ResumeUrlData]:
+    logger.info(
+        f"Generating resume pre-signed URL for applicant {applicant_id}")
+
+    # 1. Fetch applicant using existing service
+    applicant = await job_applicant_service.get_job_applicant(db=session, applicant_id=applicant_id)
+
+    # 2. Safety check: ensure the applicant has an S3 path
+    if not applicant.s3_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume file not found for this applicant."
+        )
+
+    # 3. Use your S3 Service to generate the URL (Exceptions handled inside the service)
+    presigned_url = await s3_service.generate_presigned_url(
+        s3_key=applicant.s3_path,
+        original_filename=applicant.original_filename or "resume.pdf"
+    )
+
+    # 4. Return standard response
+    return ResponseEnvelope[ResumeUrlData](
+        success=True,
+        message="Resume secure link generated successfully.",
+        data=ResumeUrlData(url=presigned_url)
     )

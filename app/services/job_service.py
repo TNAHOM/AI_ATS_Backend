@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
+from sqlmodel import col
 
 from app.core.exceptions import BaseAppException
 from app.models.job import Job
@@ -55,6 +56,21 @@ class JobService:
             raise BaseAppException(
                 error_code="JOB_LIST_FAILED",
                 message="Could not retrieve jobs.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    async def get_job_by_id(self, db: AsyncSession, job_id: UUID) -> Job | None:
+        try:
+            query = select(Job).where(col(Job.id == job_id))
+            result = await db.execute(query)
+            job = result.scalar_one_or_none()
+            return job
+        except SQLAlchemyError as e:
+            logger.error(
+                f"Failed to fetch job by id {job_id}: {e}", exc_info=True)
+            raise BaseAppException(
+                error_code="JOB_FETCH_FAILED",
+                message="Could not retrieve job.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
